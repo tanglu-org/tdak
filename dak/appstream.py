@@ -65,13 +65,73 @@ OPTIONS for generate
 
 ################################################################################
 
+class AppPackageFetcher(object):
+    '''
+    AppPackageFetcher gets packages of interest for the AppStream data extractor
+    '''
+    def __init__(self, suite, architecture, overridetype, component):
+        self.suite = suite
+        self.architecture = architecture
+        self.overridetype = overridetype
+        self.component = component
+        self.session = suite.session()
 
-def fetch_apppackages(binwriter):
-    for filename, package_list in binwriter.query().yield_per(100):
-            if filename.startswith("usr/share/applications") and filename.endswith(".desktop"):
-                yield package_list
-    # end transaction to return connection to pool
-    binwriter.session.rollback()
+    def query(self):
+        '''
+        Returns a query object that is doing most of the work.
+        '''
+        overridesuite = self.suite
+        if self.suite.overridesuite is not None:
+            overridesuite = get_suite(self.suite.overridesuite, self.session)
+        params = {
+            'suite':         self.suite.suite_id,
+            'overridesuite': overridesuite.suite_id,
+            'component':     self.component.component_id,
+            'arch_all':      get_architecture('all', self.session).arch_id,
+            'arch':          self.architecture.arch_id,
+            'type_id':       self.overridetype.overridetype_id,
+            'type':          self.overridetype.overridetype,
+        }
+
+        sql_create_temp = '''
+create temp table newest_binaries (
+    id integer primary key,
+    package text,
+    version text);
+
+create index newest_binaries_by_package on newest_binaries (package);
+
+insert into newest_binaries (id, package, version)
+    select distinct on (package) id, package, version from binaries
+        where type = :type and
+            (architecture = :arch_all or architecture = :arch) and
+            id in (select bin from bin_associations where suite = :suite)
+        order by package, version desc;'''
+        self.session.execute(sql_create_temp, params=params)
+
+        sql = '''
+with
+
+unique_override as
+    (select o.package, s.section
+        from override o, section s
+        where o.suite = :overridesuite and o.type = :type_id and o.section = s.id and
+        o.component = :component)
+
+select bc.file, string_agg(b.package || '/' || b.version, ',' order by b.package) as pkglist
+    from newest_binaries b, bin_contents bc, unique_override o
+    where b.id = bc.binary_id and o.package = b.package
+    group by bc.file'''
+
+        return self.session.query("file", "pkglist").from_statement(sql). \
+            params(params)
+
+    def fetch_packages(self):
+        for filename, package_list in self.query().yield_per(100):
+                if filename.startswith("usr/share/applications") and filename.endswith(".desktop"):
+                    yield package_list
+        # end transaction to return connection to pool
+        self.session.rollback()
 
 def appstream_helper(suite_id, arch_id, overridetype_id, component_id):
     '''
@@ -86,42 +146,43 @@ def appstream_helper(suite_id, arch_id, overridetype_id, component_id):
     log_message = [suite.suite_name, architecture.arch_string, \
         overridetype.overridetype, component.component_name]
 
-    binwriter = BinaryContentsWriter(suite, architecture, overridetype, component)
-    print([item for item in fetch_apppackages(binwriter)])
+    pkg_fetcher = AppPackageFetcher(suite, architecture, overridetype, component)
+    print([item for item in pkg_fetcher.fetch_packages()])
 
     session.close()
     return log_message
 
-def generate_appstream_data(cnf, archive_names = [], suite_names = [], component_names = [], force = None):
-    Logger = daklog.Logger('AppStream generate')
+class AppStreamWriter(object):
+    def generate_appstream_data(self, cnf, archive_names = [], suite_names = [], component_names = [], force = None):
+        Logger = daklog.Logger('AppStream generate')
 
-    session = DBConn().session()
-    suite_query = session.query(Suite)
-    if len(archive_names) > 0:
-        suite_query = suite_query.join(Suite.archive).filter(Archive.archive_name.in_(archive_names))
-    if len(suite_names) > 0:
-        suite_query = suite_query.filter(Suite.suite_name.in_(suite_names))
-    component_query = session.query(Component)
-    if len(component_names) > 0:
-        component_query = component_query.filter(Component.component_name.in_(component_names))
-    if not force:
-        suite_query = suite_query.filter(Suite.untouchable == False)
-    # we only care about deb packages, udebs usually don't contain interesting data for AppStream
-    deb_id = get_override_type('deb', session).overridetype_id
-    pool = Pool()
-    for suite in suite_query:
-        suite_id = suite.suite_id
-        for component in component_query:
-            component_id = component.component_id
-            for architecture in suite.get_architectures(skipsrc = True, skipall = True):
-                arch_id = architecture.arch_id
-                # handle packages
-                pool.apply_async(appstream_helper, (suite_id, arch_id, deb_id, component_id))
-    pool.close()
-    pool.join()
-    session.close()
+        session = DBConn().session()
+        suite_query = session.query(Suite)
+        if len(archive_names) > 0:
+            suite_query = suite_query.join(Suite.archive).filter(Archive.archive_name.in_(archive_names))
+        if len(suite_names) > 0:
+            suite_query = suite_query.filter(Suite.suite_name.in_(suite_names))
+        component_query = session.query(Component)
+        if len(component_names) > 0:
+            component_query = component_query.filter(Component.component_name.in_(component_names))
+        if not force:
+            suite_query = suite_query.filter(Suite.untouchable == False)
+        # we only care about deb packages, udebs usually don't contain interesting data for AppStream
+        deb_id = get_override_type('deb', session).overridetype_id
+        pool = Pool()
+        for suite in suite_query:
+            suite_id = suite.suite_id
+            for component in component_query:
+                component_id = component.component_id
+                for architecture in suite.get_architectures(skipsrc = True, skipall = True):
+                    arch_id = architecture.arch_id
+                    # handle packages
+                    pool.apply_async(appstream_helper, (suite_id, arch_id, deb_id, component_id))
+        pool.close()
+        pool.join()
+        session.close()
 
-    Logger.close()
+        Logger.close()
 
 ################################################################################
 
@@ -150,11 +211,11 @@ def main():
     force = bool(options['Force'])
 
     if args[0] == 'generate':
-        generate_appstream_data(cnf, archive_names, suite_names, component_names, force)
+        aswriter = AppStreamWriter()
+        aswriter.generate_appstream_data(cnf, archive_names, suite_names, component_names, force)
         return
 
     usage()
-
 
 if __name__ == '__main__':
     main()
