@@ -33,11 +33,12 @@ from daklib.dbconn import *
 from daklib.contents import BinaryContentsWriter
 from daklib import daklog
 from daklib import utils
+from multiprocessing import Pool
 
 ################################################################################
 
 def usage (exit_code=0):
-    print """Usage: dak appstream [options] subcommand
+    print("""Usage: dak appstream [options] subcommand
 
 SUBCOMMANDS
     generate
@@ -59,7 +60,7 @@ OPTIONS for generate
 
      -f, --force
         write AppStream files for suites marked as untouchable, too
-"""
+""")
     sys.exit(exit_code)
 
 ################################################################################
@@ -67,7 +68,7 @@ OPTIONS for generate
 
 def fetch_apppackages(binwriter):
     for filename, package_list in binwriter.query().yield_per(100):
-            if filename.startswith("/usr/share/applications") and filename.endswith(".desktop"):
+            if filename.startswith("usr/share/applications") and filename.endswith(".desktop"):
                 yield package_list
     # end transaction to return connection to pool
     binwriter.session.rollback()
@@ -86,7 +87,7 @@ def appstream_helper(suite_id, arch_id, overridetype_id, component_id):
         overridetype.overridetype, component.component_name]
 
     binwriter = BinaryContentsWriter(suite, architecture, overridetype, component)
-    return fetch_apppackages()
+    print([item for item in fetch_apppackages(binwriter)])
 
     session.close()
     return log_message
@@ -112,14 +113,10 @@ def generate_appstream_data(cnf, archive_names = [], suite_names = [], component
         suite_id = suite.suite_id
         for component in component_query:
             component_id = component.component_id
-            # handle source packages
-            pool.apply_async(source_helper, (suite_id, component_id),
-                callback = class_.log_result)
             for architecture in suite.get_architectures(skipsrc = True, skipall = True):
                 arch_id = architecture.arch_id
-                # handle 'deb' packages
-                pool.apply_async(appstream_helper, (suite_id, arch_id, deb_id, component_id), \
-                    callback = class_.log_result)
+                # handle packages
+                pool.apply_async(appstream_helper, (suite_id, arch_id, deb_id, component_id))
     pool.close()
     pool.join()
     session.close()
@@ -153,7 +150,7 @@ def main():
     force = bool(options['Force'])
 
     if args[0] == 'generate':
-        generate_appstream_data(cnf, archive_name, suite_name, component_name, force)
+        generate_appstream_data(cnf, archive_names, suite_names, component_names, force)
         return
 
     usage()

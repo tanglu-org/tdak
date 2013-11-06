@@ -96,6 +96,8 @@ def init():
          "Generate content files"),
         ("metadata",
          "Load data for packages/sources files"),
+	("appstream",
+         "Generate AppStream data files"),
         ("generate-index-diffs",
          "Generate .diff/Index files"),
         ("clean-suites",
