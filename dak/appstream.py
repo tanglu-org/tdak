@@ -3,7 +3,7 @@
 Create AppStream documents
 
 @contact: Debian FTPMaster <ftpmaster@debian.org>
-@copyright: 2012, 2013 Matthias Klumpp <mak@debian.org>
+@copyright: 2012-2013 Matthias Klumpp <mak@debian.org>
 @license: GNU General Public License version 2 or later
 """
 
@@ -31,6 +31,7 @@ import apt_pkg
 from daklib.config import Config
 from daklib.dbconn import *
 from daklib.contents import BinaryContentsWriter
+from daklib.appstreamdata import AppStreamGenerator
 from daklib import daklog
 from daklib import utils
 from multiprocessing import Pool
@@ -118,18 +119,18 @@ unique_override as
         where o.suite = :overridesuite and o.type = :type_id and o.section = s.id and
         o.component = :component)
 
-select bc.file, string_agg(b.package || '/' || b.version, ',' order by b.package) as pkglist
-    from newest_binaries b, bin_contents bc, unique_override o
+select bc.file, f.filename, string_agg(b.package || '/' || b.version, ',' order by b.package) as pkglist
+    from newest_binaries b, bin_contents bc, files f, unique_override o
     where b.id = bc.binary_id and o.package = b.package
     group by bc.file'''
 
-        return self.session.query("file", "pkglist").from_statement(sql). \
+        return self.session.query("file", "pkgfile", "pkglist").from_statement(sql). \
             params(params)
 
     def fetch_packages(self):
-        for filename, package_list in self.query().yield_per(100):
+        for filename, pkgfile, package_list in self.query().yield_per(100):
                 if filename.startswith("usr/share/applications") and filename.endswith(".desktop"):
-                    yield package_list
+                    yield "%s$%s" % (pkgfile, package_list)
         # end transaction to return connection to pool
         self.session.rollback()
 
@@ -148,6 +149,8 @@ def appstream_helper(suite_id, arch_id, overridetype_id, component_id):
 
     pkg_fetcher = AppPackageFetcher(suite, architecture, overridetype, component)
     print([item for item in pkg_fetcher.fetch_packages()])
+    #for item in pkg_fetcher.fetch_packages():
+
 
     session.close()
     return log_message
