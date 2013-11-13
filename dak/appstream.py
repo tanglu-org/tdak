@@ -119,18 +119,18 @@ unique_override as
         where o.suite = :overridesuite and o.type = :type_id and o.section = s.id and
         o.component = :component)
 
-select bc.file, f.filename, string_agg(b.package || '/' || b.version, ',' order by b.package) as pkglist
+select bc.file, string_agg(f.filename, ', ') as pkgfile, string_agg(b.package, ', ') as package_name, string_agg(b.version, ', ') as version
     from newest_binaries b, bin_contents bc, files f, unique_override o
-    where b.id = bc.binary_id and o.package = b.package
+    where b.id = bc.binary_id and o.package = b.package and b.file = f.id
     group by bc.file'''
 
-        return self.session.query("file", "pkgfile", "pkglist").from_statement(sql). \
+        return self.session.query("file", "package_name", "version", "pkgfile").from_statement(sql). \
             params(params)
 
     def fetch_packages(self):
-        for filename, pkgfile, package_list in self.query().yield_per(100):
+        for filename, package, version, pkgfile in self.query().yield_per(100):
                 if filename.startswith("usr/share/applications") and filename.endswith(".desktop"):
-                    yield "%s$%s" % (pkgfile, package_list)
+                    yield "%s$%s" % (pkgfile, package)
         # end transaction to return connection to pool
         self.session.rollback()
 
