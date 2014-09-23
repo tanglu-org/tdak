@@ -31,11 +31,12 @@ from daklib.regexes import *
 from daklib.textutils import fix_maintainer, ParseMaintError
 import daklib.lintian as lintian
 import daklib.utils as utils
-from daklib.upload import InvalidHashException
+import daklib.upload
 
 import apt_inst
 import apt_pkg
 from apt_pkg import version_compare
+import datetime
 import errno
 import os
 import subprocess
@@ -160,14 +161,31 @@ class SignatureAndHashesCheck(Check):
         try:
             for f in files:
                 f.check(upload.directory)
-        except IOError as e:
-            if e.errno == errno.ENOENT:
-                raise Reject('{0} refers to non-existing file: {1}\n'
-                             'Perhaps you need to include it in your upload?'
-                             .format(filename, os.path.basename(e.filename)))
-            raise
-        except InvalidHashException as e:
+        except daklib.upload.FileDoesNotExist as e:
+            raise Reject('{0}: {1}\n'
+                         'Perhaps you need to include the file in your upload?'
+                         .format(filename, unicode(e)))
+        except daklib.upload.UploadException as e:
             raise Reject('{0}: {1}'.format(filename, unicode(e)))
+
+class SignatureTimestampCheck(Check):
+    """Check timestamp of .changes signature"""
+    def check(self, upload):
+        changes = upload.changes
+
+        now = datetime.datetime.utcnow()
+        timestamp = changes.signature_timestamp
+        age = now - timestamp
+
+        age_max = datetime.timedelta(days=365)
+        age_min = datetime.timedelta(days=-7)
+
+        if age > age_max:
+            raise Reject('{0}: Signature from {1} is too old (maximum age is {2} days)'.format(changes.filename, timestamp, age_max.days))
+        if age < age_min:
+            raise Reject('{0}: Signature from {1} is too far in the future (tolerance is {2} days)'.format(changes.filename, timestamp, abs(age_min.days)))
+
+        return True
 
 class ChangesCheck(Check):
     """Check changes file for syntax errors."""
