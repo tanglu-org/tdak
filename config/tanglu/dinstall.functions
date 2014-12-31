@@ -30,7 +30,7 @@ function onerror() {
         cat "${STAGEFILE}.log"
     else
         echo "file ${STAGEFILE}.log does not exist, sorry"
-    fi | mail -s "${subject}" -a "X-Debian: DAK" cron@ftp-master.tanglu.org
+    fi | mail -s "${subject}" -a "X-Debian: DAK" -a "From: Tanglu FTP Masters <ftpmaster@ftp-master.tanglu.org>" mak@debian.org
 }
 
 ########################################################################
@@ -75,7 +75,7 @@ function i18n1() {
             fi
         else
             echo "ARRRR, missing the timestamp ${TSTAMP} directory, not updating i18n, ARRR"
-            echo "Arf, Arf, Arf, missing the timestamp ${TSTAMP} directory, not updating i18n, arf, arf, arf" | mail -a "X-Debian: DAK" -s "Lisa, if you don't like your job you don't strike. You just go in every day and do it really half-assed. That's the American way." debian-l10n-devel@lists.alioth.debian.org
+            echo "Arf, Arf, Arf, missing the timestamp ${TSTAMP} directory, not updating i18n, arf, arf, arf" | mail -a "X-Debian: DAK" -s "Lisa, if you don't like your job you don't strike. You just go in every day and do it really half-assed. That's the American way." debian-l10n-devel@lists.alioth.debian.orgX
         fi
     else
         echo "ARRRRRRR, could not verify our timestamp signature, ARRR. Don't mess with our files, i18n guys, ARRRRR."
@@ -519,7 +519,7 @@ function savetimestamp() {
 }
 
 function maillogfile() {
-    cat "$LOGFILE" | mail -a "X-Debian: DAK" -s "Log for dinstall run of ${NOW}" cron@ftp-master.tanglu.org
+    cat "$LOGFILE" | mail -a "X-Debian: DAK" -s "Log for dinstall run of ${NOW}" -a "From: Tanglu FTP Masters <ftpmaster@ftp-master.tanglu.org>" cron@ftp-master.tanglu.org
 }
 
 function renamelogfile() {
