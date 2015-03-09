@@ -84,6 +84,8 @@ def obsoleteAllAssociations(suite, session):
     return fetch('old_and_unreferenced', query, { 'suite': suite }, session)
 
 def deleteAssociations(table, idList, session):
+    if not idList:
+        return
     query = """
         DELETE
             FROM %s
