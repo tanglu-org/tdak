@@ -83,8 +83,7 @@ function do_dists () {
 }
 
 function do_debile_incoming () {
-    cd /pub/ftp/incoming/
-    [ "$(ls -A /pub/ftp/incoming)" ] && chmod 660 /pub/ftp/incoming/*
+    [ "$(ls -A /pub/ftp/incoming)" ] && sudo -u ftp chmod 066 /pub/ftp/incoming/*
     sudo -u debile debile-process-incoming
 }
 
@@ -126,7 +125,7 @@ dak contents -l 10000 scan-binary
 dak contents -l 1000 scan-source
 
 # cleanup incoming upload dir
-[ "$(ls -A /pub/ftp/incoming)" ] && find /pub/ftp/incoming/ -mtime +2 -exec rm {} \;
+[ "$(ls -A /pub/ftp/incoming)" ] && find /pub/ftp/incoming/ -mtime +4 -exec rm {} \;
 
 ################################################################################
  #echo "Completed. Compressing logfile."
