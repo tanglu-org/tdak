@@ -355,24 +355,18 @@ class CommandFile(object):
         suite = section['Suite']
         component = section['Component']
 
-        if " " in packages_str:
-            packages = packages_str.split(" ")
+        p = subprocess.Popen(["sync-debian-package", "-i", suite, "staging", component, packages_str], stdout=subprocess.PIPE, stdin=subprocess.PIPE, stderr=subprocess.STDOUT)
+        output = p.communicate()
+        if p.returncode is not 0:
+            self.result.append("Failed syncing: {0} from {1} ({2})".format(packages_str, suite, component))
+            out_str = ""
+            if output[0] != None:
+                out_str = output[0]
+            if output[1] != None:
+                out_str += output[1]
+            self.result.append(" - Error: {0}".format(out_str))
         else:
-            packages = [packages_str]
-
-        for pkg in packages:
-            p = subprocess.Popen(["sync-debian-package", "-i", suite, "staging", component, pkg], stdout=subprocess.PIPE, stdin=subprocess.PIPE, stderr=subprocess.STDOUT)
-            output = p.communicate()
-            if p.returncode is not 0:
-                self.result.append("Failed syncing: {0} from {1} ({2})".format(pkg, suite, component))
-                out_str = ""
-                if output[0] != None:
-                    out_str = output[0]
-                if output[1] != None:
-                    out_str += output[1]
-                self.result.append(" - Error: {0}".format(out_str))
-            else:
-                self.result.append("Synced package: {0} from {1} ({2})".format(pkg, suite, component))
+            self.result.append("Synced package: {0} from {1} ({2})".format(packages_str, suite, component))
 
     def action_break_the_archive(self, fingerprint, section, session):
         name = 'Dave'
