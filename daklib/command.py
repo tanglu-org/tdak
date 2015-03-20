@@ -355,7 +355,20 @@ class CommandFile(object):
         suite = section['Suite']
         component = section['Component']
 
-        p = subprocess.Popen(["sync-debian-package", "-i", suite, "staging", component, packages_str], stdout=subprocess.PIPE, stdin=subprocess.PIPE, stderr=subprocess.STDOUT)
+        if " " in packages_str:
+            packages = packages_str.split(" ")
+        else:
+            packages = [packages_str]
+
+        # we always sync to the staging suite of Tanglu
+        sync_cmd = ["sync-debian-package", "-i", suite, "staging", component]
+        # add to-be-synced packages to the parameter list
+        sync_cmd.extend(packages)
+
+        p = subprocess.Popen(sync_cmd,
+                            stdout=subprocess.PIPE,
+                            stdin=subprocess.PIPE,
+                            stderr=subprocess.STDOUT)
         output = p.communicate()
         if p.returncode is not 0:
             self.result.append("Failed syncing: {0} from {1} ({2})".format(packages_str, suite, component))
@@ -366,7 +379,7 @@ class CommandFile(object):
                 out_str += output[1]
             self.result.append(" - Error: {0}".format(out_str))
         else:
-            self.result.append("Synced package: {0} from {1} ({2})".format(packages_str, suite, component))
+            self.result.append("Synced package(s): {0} from {1} ({2})".format(packages_str, suite, component))
 
     def action_break_the_archive(self, fingerprint, section, session):
         name = 'Dave'
