@@ -203,7 +203,7 @@ def check_override():
     session = DBConn().session()
 
     # FIXME: Don't hardcode that!
-    for suite_name in [ "chromodoris" ]:
+    for suite_name in [ "dasyatis" ]:
         print suite_name
         print "-" * len(suite_name)
         print
@@ -498,7 +498,7 @@ def check_indices_files_exist():
     Ensure files mentioned in Packages & Sources exist
     """
     # FIXME: Don't hardcode suites!
-    for suite in [ "chromodoris" ]:
+    for suite in [ "dasyatis" ]:
         for component in get_component_names():
             architectures = get_suite_architectures(suite)
             for arch in [ i.arch_string.lower() for i in architectures ]:
