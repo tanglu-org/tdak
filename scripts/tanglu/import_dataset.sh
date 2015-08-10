@@ -51,12 +51,13 @@ echo "Importing dataset..."
 # Change to a known safe location
 cd $masterdir
 
-echo "Creating database backup..."
 NOW=$(date "+%Y%m%d%H%M")
-pg_dump -Fc projectb > $dbbackupdir/dump_$(date +%Y.%m.%d-%H:%M:%S)
+
+echo "Creating database backup..."
+pg_dump -Fc projectb > $dbbackupdir/projectb_$(date +%Y-%m-%d_%H%M%S).dump
 # remove old backups
 cd $dbbackupdir
-find . -maxdepth 1 -mindepth 1 -type f -mmin +2880 -name 'dump_*' -delete
+find . -maxdepth 1 -mindepth 1 -type f -mmin +4320 -name '*.dump' -delete
 cd $masterdir
 
 echo "Importing new data for ${IMPORTSUITE} into database"
