@@ -4,9 +4,7 @@ from db_test import DBDakTestCase
 from base_test import fixture
 
 from daklib.dbconn import *
-from daklib.queue_install import package_to_suite
-from daklib.queue import get_newest_source, get_suite_version_by_source, \
-    get_source_by_package_and_suite, get_suite_version_by_package
+from daklib.queue import get_suite_version_by_source, get_suite_version_by_package
 
 from sqlalchemy.orm.exc import MultipleResultsFound
 import unittest
@@ -115,10 +113,6 @@ class PackageTestCase(DBDakTestCase):
         self.assertEqual((False, self.file['sl_3.03-16.dsc']), \
             check_poolfile('main/s/sl/sl_3.03-16.dsc', 0, 'deadbeef', \
                 contrib.location_id, self.session))
-        # test get_poolfile_like_name()
-        self.assertEqual([self.file['sl_3.03-16.dsc']], \
-            get_poolfile_like_name('sl_3.03-16.dsc', self.session))
-        self.assertEqual([], get_poolfile_like_name('foobar', self.session))
 
     def test_maintainers(self):
         '''
@@ -212,57 +206,6 @@ class PackageTestCase(DBDakTestCase):
         self.assertEqual(self.loc['main'].location_id, dsc_location_id)
         self.assertEqual([], pfs)
 
-    def test_source_exists(self):
-        'test function source_exists()'
-
-        hello = self.source['hello_2.2-2']
-        self.assertTrue(source_exists(hello.source, hello.version, \
-            suites = ['sid'], session = self.session))
-        # binNMU
-        self.assertTrue(source_exists(hello.source, hello.version + '+b7', \
-            suites = ['sid'], session = self.session))
-        self.assertTrue(not source_exists(hello.source, hello.version, \
-            suites = ['lenny', 'squeeze'], session = self.session))
-        self.assertTrue(not source_exists(hello.source, hello.version, \
-            suites = ['lenny', 'sid'], session = self.session))
-        self.assertTrue(not source_exists(hello.source, hello.version, \
-            suites = ['sid', 'lenny'], session = self.session))
-        self.assertTrue(not source_exists(hello.source, '0815', \
-            suites = ['sid'], session = self.session))
-        # 'any' suite
-        self.assertTrue(source_exists(hello.source, hello.version, \
-            session = self.session))
-
-    def test_package_to_suite(self):
-        'test function package_to_suite()'
-
-        pkg = Pkg()
-        pkg.changes = { 'distribution': {} }
-        upload = Upload(pkg)
-        self.assertTrue(not package_to_suite(upload, 'sid', self.session))
-        pkg.changes['distribution'] = { 'sid': '' }
-        pkg.changes['architecture'] = { 'source': '' }
-        self.assertTrue(package_to_suite(upload, 'sid', self.session))
-        pkg.changes['architecture'] = {}
-        pkg.changes['source'] = self.source['hello_2.2-2'].source
-        pkg.changes['version'] = self.source['hello_2.2-2'].version
-        self.assertTrue(not package_to_suite(upload, 'sid', self.session))
-        pkg.changes['version'] = '42'
-        self.assertTrue(package_to_suite(upload, 'sid', self.session))
-        pkg.changes['source'] = 'foobar'
-        pkg.changes['version'] = self.source['hello_2.2-2'].version
-        self.assertTrue(package_to_suite(upload, 'sid', self.session))
-        pkg.changes['distribution'] = { 'lenny': '' }
-        self.assertTrue(package_to_suite(upload, 'lenny', self.session))
-
-    def test_get_newest_source(self):
-        'test function get_newest_source()'
-
-        import daklib.queue
-        daklib.queue.dm_suites = ['sid']
-        self.assertEqual(self.source['hello_2.2-2'], get_newest_source('hello', self.session))
-        self.assertEqual(None, get_newest_source('foobar', self.session))
-
     def test_get_suite_version_by_source(self):
         'test function get_suite_version_by_source()'
 
@@ -337,18 +280,6 @@ class PackageTestCase(DBDakTestCase):
         self.assertEqual('deadbeef', poolfile.md5sum)
         self.assertEqual('deadbeef', poolfile.sha1sum)
         self.assertEqual('deadbeef', poolfile.sha256sum)
-
-    def test_get_source_by_package_and_suite(self):
-        'test get_source_by_package_and_suite()'
-
-        query = get_source_by_package_and_suite('hello', 'sid', self.session)
-        self.assertEqual(self.source['hello_2.2-1'], query.one())
-        query = get_source_by_package_and_suite('gnome-hello', 'squeeze', self.session)
-        self.assertEqual(self.source['hello_2.2-1'], query.one())
-        query = get_source_by_package_and_suite('hello', 'hamm', self.session)
-        self.assertEqual(0, query.count())
-        query = get_source_by_package_and_suite('foobar', 'squeeze', self.session)
-        self.assertEqual(0, query.count())
 
     def test_get_suite_version_by_package(self):
         'test function get_suite_version_by_package()'

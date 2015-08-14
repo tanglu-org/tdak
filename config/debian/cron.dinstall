@@ -252,12 +252,12 @@ GO=(
 stage $GO
 
 GO=(
-    FUNC="filelist"
-    TIME="generate-filelist"
-    ARGS=""
+    FUNC="autocruft"
+    TIME="autocruft"
+    ARGS="unstable experimental"
     ERR=""
 )
-#stage $GO
+stage $GO
 
 GO=(
     FUNC="fingerprints"

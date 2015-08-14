@@ -2,10 +2,10 @@
 # coding=utf8
 
 """
-Drop an obsolete view.
+Do not include long description in Packages index by default
 
 @contact: Debian FTP Master <ftpmaster@debian.org>
-@copyright: 2010 Luca Falavigna <dktrkranz@debian.org>
+@copyright: 2015, Ansgar Burchardt <ansgar@debian.org>
 @license: GNU General Public License version 2 or later
 """
 
@@ -25,24 +25,28 @@ Drop an obsolete view.
 
 ################################################################################
 
-
-################################################################################
-
 import psycopg2
 from daklib.dak_exceptions import DBUpdateError
+from daklib.config import Config
+
+statements = [
+  "ALTER TABLE suite ALTER include_long_description SET DEFAULT FALSE",
+]
 
 ################################################################################
 def do_update(self):
-    """
-    Drop view srcfiles_suite_component
-    """
     print __doc__
     try:
+        cnf = Config()
+
         c = self.db.cursor()
-        c.execute('DROP VIEW srcfiles_suite_component')
-        c.execute("UPDATE config SET value = '34' WHERE name = 'db_revision'")
+
+        for stmt in statements:
+            c.execute(stmt)
+
+        c.execute("UPDATE config SET value = '107' WHERE name = 'db_revision'")
         self.db.commit()
 
     except psycopg2.ProgrammingError as msg:
         self.db.rollback()
-        raise DBUpdateError('Unable to apply build_queue update 34, rollback issued. Error message : %s' % (str(msg)))
+        raise DBUpdateError('Unable to apply sick update 107, rollback issued. Error message: {0}'.format(msg))

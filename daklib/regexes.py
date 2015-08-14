@@ -34,8 +34,6 @@ re_isanum = re.compile (r"^\d+$")
 
 #: Looking for the default reply
 re_default_answer = re.compile(r"\[(.*)\]")
-#: Used in build_summaries to make changes output look better
-re_fdnic = re.compile(r"\n\n")
 #: Detect a binnmu
 re_bin_only_nmu = re.compile(r"\+b\d+$")
 
@@ -134,6 +132,9 @@ re_includeinpdiff = re.compile(r"(Translation-[a-zA-Z_]+\.(?:bz2|xz))")
 
 # Match safe filenames
 re_file_safe = re.compile(r'^[a-zA-Z0-9][a-zA-Z0-9_.~+-]*$')
+
+# Match safe filenames, including slashes
+re_file_safe_slash = re.compile(r'^[a-zA-Z0-9][/a-zA-Z0-9_.~+-]*$')
 
 # Prefix of binary and source filenames
 _re_file_prefix = r'^(?P<package>[a-z0-9][a-z0-9.+-]+)_(?P<version>[A-Za-z0-9.~+-]+?)'

@@ -76,7 +76,7 @@ function i18n1() {
             # Lets check!
             if ${scriptsdir}/ddtp-i18n-check.sh . ${scriptdir}/i18n/${TSTAMP}; then
                 # Yay, worked, lets copy around
-                for dir in jessie sid; do
+                for dir in stretch sid; do
                     if [ -d dists/${dir}/ ]; then
                         cd dists/${dir}/main/i18n
                         rsync -aq --delete --delete-after --exclude Translation-en.bz2 --exclude Translation-*.diff/ . ${ftpdir}/dists/${dir}/main/i18n/.
@@ -107,9 +107,10 @@ function dominate() {
     dak dominate
 }
 
-function filelist() {
-    log "Generating file lists for apt-ftparchive"
-    dak generate-filelist
+function autocruft() {
+    log "Check for obsolete binary packages"
+    dak auto-decruft -s unstable
+    dak auto-decruft -s experimental --if-newer-version-in unstable --if-newer-version-in-rm-msg "NVIU"
 }
 
 function fingerprints() {
@@ -144,10 +145,6 @@ function overrides() {
     log "Writing overrides into text files"
     cd $overridedir
     dak make-overrides
-
-    # FIXME
-    rm -f override.sid.all3
-    for i in main contrib non-free main.debian-installer; do cat override.sid.$i >> override.sid.all3; done
 }
 
 function mpfm() {
@@ -231,11 +228,14 @@ function mkmaintainers() {
 function copyoverrides() {
     log 'Copying override files into public view ...'
 
-    for ofile in ${overridedir}/override.{squeeze,wheezy,jessie,sid}.{,extra.}{main,contrib,non-free}*; do
-        bname=${ofile##*/}
-        gzip -9cv --rsyncable ${ofile} > ${indices}/${bname}.gz
-        chmod g+w ${indices}/${bname}.gz
-    done
+    (
+        shopt -s nullglob
+        for ofile in ${overridedir}/override.{squeeze,wheezy,jessie,stretch,sid}.{,extra.}{main,contrib,non-free}*; do
+            bname=${ofile##*/}
+            gzip -9cv --rsyncable ${ofile} > ${indices}/${bname}.gz
+            chmod g+w ${indices}/${bname}.gz
+        done
+    )
 }
 
 function mkfilesindices() {
@@ -362,12 +362,12 @@ function mkfilesindices() {
     done
 
     (cd $base/ftp/
-	    for dist in sid jessie; do
+	    for dist in sid jessie stretch; do
 		    find ./dists/$dist/main/i18n/ \! -type d | sort -u | gzip -9 > $base/ftp/indices/files/components/translation-$dist.list.gz
 	    done
     )
 
-    (cat ../arch-i386.files ../arch-amd64.files; zcat suite-proposed-updates.list.gz ; zcat translation-sid.list.gz ; zcat translation-jessie.list.gz) |
+    (cat ../arch-i386.files ../arch-amd64.files; zcat suite-proposed-updates.list.gz ; zcat translation-sid.list.gz ; zcat translation-jessie.list.gz ; zcat translation-stretch.list.gz) |
     sort -u | poolfirst > ../typical.files
 
     rm -f $ARCHLIST
@@ -393,7 +393,7 @@ function mkchecksums() {
 }
 
 function mirror() {
-    local archiveroot
+    local archiveroot mirrordir
 
     log "Regenerating \"public\" mirror/ hardlink fun"
     DATE_SERIAL=$(date +"%Y%m%d01")
@@ -438,7 +438,7 @@ function dm() {
 
 function bts() {
     log "Categorizing uncategorized bugs filed against ftp.debian.org"
-    dak bts-categorize
+    sudo -u dak-unpriv dak bts-categorize
 }
 
 function ddaccess() {
@@ -542,7 +542,7 @@ function stats() {
 function cleantransactions() {
     log "Cleanup transaction ids older than 3 months"
     cd $base/backup/
-    find -maxdepth 1 -mindepth 1 -type f -name 'txid_*' -mtime +90 -print0 | xargs -0 --no-run-if-empty rm
+    find -maxdepth 1 -mindepth 1 -type f -name 'txid_*' -mtime +90 -delete
 }
 
 function logstats() {

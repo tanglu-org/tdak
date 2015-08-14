@@ -37,6 +37,7 @@ import re
 import sys
 import traceback
 import apt_pkg
+from sqlalchemy.orm.exc import NoResultFound
 
 from daklib.dbconn import *
 from daklib import daklog
@@ -108,6 +109,8 @@ def try_or_reject(function):
                 real_comment_reject(upload, srcqueue, comments, transaction, notify=False)
         if not Options['No-Action']:
             transaction.commit()
+        else:
+            transaction.rollback()
     return wrapper
 
 ################################################################################
@@ -136,13 +139,13 @@ def comment_accept(upload, srcqueue, comments, transaction):
         component_name = 'main'
         if section.find('/') != -1:
             component_name = section.split('/', 1)[0]
-        return session.query(Component).filter_by(component_name=component_name).one()
+        return get_mapped_component(component_name, session=session)
 
     def source_component_func(db_source):
         package_list = PackageList(db_source.proxy)
         component = source_component_from_package_list(package_list, upload.target_suite)
         if component is not None:
-            return component
+            return get_mapped_component(component.component_name, session=session)
 
         # Fallback for packages without Package-List field
         query = session.query(Override).filter_by(suite=overridesuite, package=db_source.source) \

@@ -54,7 +54,7 @@ class InvalidHashException(UploadException):
                 "According to the control file the {0} hash should be {2},\n"
                 "but {1} has {3}.\n"
                 "\n"
-                "If you did not include {1} in you upload, a different version\n"
+                "If you did not include {1} in your upload, a different version\n"
                 "might already be known to the archive software.") \
                 .format(self.hash_name, self.filename, self.expected, self.actual)
 
@@ -73,9 +73,18 @@ class FileDoesNotExist(UploadException):
 class HashedFile(object):
     """file with checksums
     """
-    def __init__(self, filename, size, md5sum, sha1sum, sha256sum, section=None, priority=None):
+    def __init__(self, filename, size, md5sum, sha1sum, sha256sum, section=None, priority=None, input_filename=None):
         self.filename = filename
         """name of the file
+        @type: str
+        """
+
+        if input_filename is None:
+            input_filename = filename
+        self.input_filename = input_filename
+        """name of the file on disk
+
+        Used for temporary files that should not be installed using their on-disk name.
         @type: str
         """
 
@@ -146,16 +155,19 @@ class HashedFile(object):
 
         @raise InvalidHashException: hash mismatch
         """
-        path = os.path.join(directory, self.filename)
-
+        path = os.path.join(directory, self.input_filename)
         try:
             with open(path) as fh:
-                size = os.fstat(fh.fileno()).st_size
-                hashes = apt_pkg.Hashes(fh)
+                self.check_fh(fh)
         except IOError as e:
             if e.errno == errno.ENOENT:
-                raise FileDoesNotExist(self.filename)
+                raise FileDoesNotExist(self.input_filename)
             raise
+
+    def check_fh(self, fh):
+        size = os.fstat(fh.fileno()).st_size
+        fh.seek(0)
+        hashes = apt_pkg.Hashes(fh)
 
         if size != self.size:
             raise InvalidHashException(self.filename, 'size', self.size, size)
@@ -169,7 +181,7 @@ class HashedFile(object):
         if hashes.sha256 != self.sha256sum:
             raise InvalidHashException(self.filename, 'sha256sum', self.sha256sum, hashes.sha256)
 
-def parse_file_list(control, has_priority_and_section):
+def parse_file_list(control, has_priority_and_section, safe_file_regexp = re_file_safe, fields = ('Files', 'Checksums-Sha1', 'Checksums-Sha256')):
     """Parse Files and Checksums-* fields
 
     @type  control: dict-like
@@ -186,7 +198,7 @@ def parse_file_list(control, has_priority_and_section):
     """
     entries = {}
 
-    for line in control.get("Files", "").split('\n'):
+    for line in control.get(fields[0], "").split('\n'):
         if len(line) == 0:
             continue
 
@@ -199,26 +211,26 @@ def parse_file_list(control, has_priority_and_section):
 
         entries[filename] = entry
 
-    for line in control.get("Checksums-Sha1", "").split('\n'):
+    for line in control.get(fields[1], "").split('\n'):
         if len(line) == 0:
             continue
         (sha1sum, size, filename) = line.split()
         entry = entries.get(filename, None)
         if entry is None:
-            raise InvalidChangesException('{0} is listed in Checksums-Sha1, but not in Files.'.format(filename))
+            raise InvalidChangesException('{0} is listed in {1}, but not in {2}.'.format(filename, fields[1], fields[0]))
         if entry is not None and entry.get('size', None) != long(size):
-            raise InvalidChangesException('Size for {0} in Files and Checksum-Sha1 fields differ.'.format(filename))
+            raise InvalidChangesException('Size for {0} in {1} and {2} fields differ.'.format(filename, fields[0], fields[1]))
         entry['sha1sum'] = sha1sum
 
-    for line in control.get("Checksums-Sha256", "").split('\n'):
+    for line in control.get(fields[2], "").split('\n'):
         if len(line) == 0:
             continue
         (sha256sum, size, filename) = line.split()
         entry = entries.get(filename, None)
         if entry is None:
-            raise InvalidChangesException('{0} is listed in Checksums-Sha256, but not in Files.'.format(filename))
+            raise InvalidChangesException('{0} is listed in {1}, but not in {2}.'.format(filename, fields[2], fields[0]))
         if entry is not None and entry.get('size', None) != long(size):
-            raise InvalidChangesException('Size for {0} in Files and Checksum-Sha256 fields differ.'.format(filename))
+            raise InvalidChangesException('Size for {0} in {1} and {2} fields differ.'.format(filename, fields[0], fields[2]))
         entry['sha256sum'] = sha256sum
 
     files = {}
@@ -232,7 +244,7 @@ def parse_file_list(control, has_priority_and_section):
             raise InvalidChangesException('No sha1sum for {0}.'.format(filename))
         if 'sha256sum' not in entry:
             raise InvalidChangesException('No sha256sum for {0}.'.format(filename))
-        if not re_file_safe.match(filename):
+        if safe_file_regexp is not None and not safe_file_regexp.match(filename):
             raise InvalidChangesException("{0}: References file with unsafe filename {1}.".format(self.filename, filename))
         f = files[filename] = HashedFile(**entry)
 
@@ -442,7 +454,7 @@ class Binary(object):
         @type: HashedFile
         """
 
-        path = os.path.join(directory, hashed_file.filename)
+        path = os.path.join(directory, hashed_file.input_filename)
         data = apt_inst.DebFile(path).control.extractdata("control")
 
         self.control = apt_pkg.TagSection(data)
@@ -515,7 +527,7 @@ class Source(object):
         # make sure the hash for the dsc is valid before we use it
         self._dsc_file.check(directory)
 
-        dsc_file_path = os.path.join(directory, self._dsc_file.filename)
+        dsc_file_path = os.path.join(directory, self._dsc_file.input_filename)
         data = open(dsc_file_path, 'r').read()
         self._signed_file = SignedFile(data, keyrings, require_signature)
         self.dsc = apt_pkg.TagSection(self._signed_file.contents)

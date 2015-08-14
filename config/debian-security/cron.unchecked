@@ -73,6 +73,9 @@ if [ "${doanything}" = "false" ] && [ "${dopolicy}" = "false" ]; then
     exit 0
 fi
 
+# Update stable-kfreebsd
+dak update-suite stable stable-kfreebsd
+
 # manage build queues
 dak manage-build-queues -a
 dak generate-packages-sources2 -a build-queues
@@ -82,12 +85,11 @@ ${scriptsdir}/update-buildd-archive ${base}/build-queues ${incoming}/debian-secu
 if [ "x${dopolicy}x" = "xtruex" ]; then
     # We had something approved from a policy queue, push out new archive
     dak dominate
-    #dak generate-filelist
     cd $configdir
     $configdir/map.sh
     dak generate-packages-sources2 -a security
-    dak generate-releases -a security
-    /srv/security-master.debian.org/dak/config/debian-security/make-mirror.sh
+    dak generate-releases -a security >/dev/null
+    /srv/security-master.debian.org/dak/config/debian-security/make-mirror.sh >/dev/null
     sudo -u archvsync -H /home/archvsync/signal_security
 fi
 

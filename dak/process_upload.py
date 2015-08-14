@@ -297,7 +297,6 @@ def accept(directory, upload):
 
 @try_or_reject
 def accept_to_new(directory, upload):
-    cnf = Config()
 
     Logger.log(['ACCEPT-TO-NEW', upload.changes.filename])
     print "ACCEPT-TO-NEW"
@@ -379,8 +378,6 @@ def action(directory, upload):
     if Options["No-Action"] or Options["Automatic"]:
         answer = 'S'
 
-    queuekey = ''
-
     print summary
     print
     print "\n".join(package_info)
@@ -454,7 +451,7 @@ def unlink_if_exists(path):
         if e.errno != errno.ENOENT:
             raise
 
-def process_it(directory, changes, keyrings, session):
+def process_it(directory, changes, keyrings):
     global Logger
 
     print "\n{0}\n".format(changes.filename)
@@ -480,6 +477,7 @@ def process_changes(changes_filenames):
     session = DBConn().session()
     keyrings = session.query(Keyring).filter_by(active=True).order_by(Keyring.priority)
     keyring_files = [ k.keyring_name for k in keyrings ]
+    session.close()
 
     changes = []
     for fn in changes_filenames:
@@ -493,9 +491,7 @@ def process_changes(changes_filenames):
     changes.sort(key=lambda x: x[1])
 
     for directory, c in changes:
-        process_it(directory, c, keyring_files, session)
-
-    session.rollback()
+        process_it(directory, c, keyring_files)
 
 ###############################################################################
 

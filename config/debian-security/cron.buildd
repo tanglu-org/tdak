@@ -9,7 +9,7 @@ set -u
 export SCRIPTVARS=/srv/security-master.debian.org/dak/config/debian-security/vars
 . $SCRIPTVARS
 SSH_SOCKET=~/.ssh/buildd.debian.org.socket
-DISTS="oldstable stable"
+DISTS="oldstable stable stable-kfreebsd testing"
 
 if [ -e $ftpdir/Archive_Maintenance_In_Progress ]; then
     exit 0
@@ -41,14 +41,20 @@ if [ ! -z "${dists}" ]; then
     trap 'kill -TERM $SSH_PID' 0
     for d in ${dists}; do
         case ${d} in
-            oldstable)
+            oldoldstable)
                 send=squeeze
                 ;;
-            stable)
+            oldstable)
                 send=wheezy
                 ;;
-            testing)
+            stable)
                 send=jessie
+                ;;
+            stable-kfreebsd)
+                send=jessie-kfreebsd
+                ;;
+            testing)
+                send=stretch
                 ;;
             *)
                 send=unknown

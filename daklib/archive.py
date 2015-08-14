@@ -110,7 +110,7 @@ class ArchiveTransaction(object):
             session.flush()
 
             path = os.path.join(archive.path, 'pool', component.component_name, poolname)
-            hashed_file_path = os.path.join(directory, hashed_file.filename)
+            hashed_file_path = os.path.join(directory, hashed_file.input_filename)
             self.fs.copy(hashed_file_path, path, link=False, mode=archive.mode)
 
         return poolfile
@@ -176,6 +176,10 @@ class ArchiveTransaction(object):
             maintainer=maintainer,
             poolfile=db_file,
             binarytype=binary.type,
+            )
+        # Other attributes that are ignored for purposes of equality with
+        # an existing source
+        rest2 = dict(
             fingerprint=fingerprint,
             )
 
@@ -187,6 +191,8 @@ class ArchiveTransaction(object):
         except NoResultFound:
             db_binary = DBBinary(**unique)
             for key, value in rest.iteritems():
+                setattr(db_binary, key, value)
+            for key, value in rest2.iteritems():
                 setattr(db_binary, key, value)
             session.add(db_binary)
             session.flush()
@@ -241,21 +247,104 @@ class ArchiveTransaction(object):
         """Add Built-Using sources to C{db_binary.extra_sources}
         """
         session = self.session
-        built_using = control.get('Built-Using', None)
 
-        if built_using is not None:
-            for dep in apt_pkg.parse_depends(built_using):
-                assert len(dep) == 1, 'Alternatives are not allowed in Built-Using field'
-                bu_source_name, bu_source_version, comp = dep[0]
-                assert comp == '=', 'Built-Using must contain strict dependencies'
+        for bu_source_name, bu_source_version in daklib.utils.parse_built_using(control):
+            bu_source = session.query(DBSource).filter_by(source=bu_source_name, version=bu_source_version).first()
+            if bu_source is None:
+                raise ArchiveException('{0}: Built-Using refers to non-existing source package {1} (= {2})'.format(filename, bu_source_name, bu_source_version))
 
-                bu_source = session.query(DBSource).filter_by(source=bu_source_name, version=bu_source_version).first()
-                if bu_source is None:
-                    raise ArchiveException('{0}: Built-Using refers to non-existing source package {1} (= {2})'.format(filename, bu_source_name, bu_source_version))
+            self._ensure_extra_source_exists(filename, bu_source, suite.archive, extra_archives=extra_archives)
 
-                self._ensure_extra_source_exists(filename, bu_source, suite.archive, extra_archives=extra_archives)
+            db_binary.extra_sources.append(bu_source)
 
-                db_binary.extra_sources.append(bu_source)
+    def install_source_to_archive(self, directory, source, archive, component, changed_by, allow_tainted=False, fingerprint=None):
+        session = self.session
+        control = source.dsc
+        maintainer = get_or_set_maintainer(control['Maintainer'], session)
+        source_name = control['Source']
+
+        ### Add source package to database
+
+        # We need to install the .dsc first as the DBSource object refers to it.
+        db_file_dsc = self._install_file(directory, source._dsc_file, archive, component, source_name)
+
+        unique = dict(
+            source=source_name,
+            version=control['Version'],
+            )
+        rest = dict(
+            maintainer=maintainer,
+            #install_date=datetime.now().date(),
+            poolfile=db_file_dsc,
+            dm_upload_allowed=(control.get('DM-Upload-Allowed', 'no') == 'yes'),
+            )
+        # Other attributes that are ignored for purposes of equality with
+        # an existing source
+        rest2 = dict(
+            changedby=changed_by,
+            fingerprint=fingerprint,
+            )
+
+        created = False
+        try:
+            db_source = session.query(DBSource).filter_by(**unique).one()
+            for key, value in rest.iteritems():
+                if getattr(db_source, key) != value:
+                    raise ArchiveException('{0}: Does not match source in database.'.format(source._dsc_file.filename))
+        except NoResultFound:
+            created = True
+            db_source = DBSource(**unique)
+            for key, value in rest.iteritems():
+                setattr(db_source, key, value)
+            for key, value in rest2.iteritems():
+                setattr(db_source, key, value)
+            # XXX: set as default in postgres?
+            db_source.install_date = datetime.now().date()
+            session.add(db_source)
+            session.flush()
+
+            # Add .dsc file. Other files will be added later.
+            db_dsc_file = DSCFile()
+            db_dsc_file.source = db_source
+            db_dsc_file.poolfile = db_file_dsc
+            session.add(db_dsc_file)
+            session.flush()
+
+        if not created:
+            for f in db_source.srcfiles:
+                self._copy_file(f.poolfile, archive, component, allow_tainted=allow_tainted)
+            return db_source
+
+        ### Now add remaining files and copy them to the archive.
+
+        for hashed_file in source.files.itervalues():
+            hashed_file_path = os.path.join(directory, hashed_file.input_filename)
+            if os.path.exists(hashed_file_path):
+                db_file = self._install_file(directory, hashed_file, archive, component, source_name)
+                session.add(db_file)
+            else:
+                db_file = self.get_file(hashed_file, source_name)
+                self._copy_file(db_file, archive, component, allow_tainted=allow_tainted)
+
+            db_dsc_file = DSCFile()
+            db_dsc_file.source = db_source
+            db_dsc_file.poolfile = db_file
+            session.add(db_dsc_file)
+
+        session.flush()
+
+        # Importing is safe as we only arrive here when we did not find the source already installed earlier.
+        import_metadata_into_db(db_source, session)
+
+        # Uploaders are the maintainer and co-maintainers from the Uploaders field
+        db_source.uploaders.append(maintainer)
+        if 'Uploaders' in control:
+            from daklib.textutils import split_uploaders
+            for u in split_uploaders(control['Uploaders']):
+                db_source.uploaders.append(get_or_set_maintainer(u, session))
+        session.flush()
+
+        return db_source
 
     def install_source(self, directory, source, suite, component, changed_by, allow_tainted=False, fingerprint=None):
         """Install a source package
@@ -284,91 +373,12 @@ class ArchiveTransaction(object):
         @rtype:  L{daklib.dbconn.DBSource}
         @return: database object for the new source
         """
-        session = self.session
-        archive = suite.archive
-        control = source.dsc
-        maintainer = get_or_set_maintainer(control['Maintainer'], session)
-        source_name = control['Source']
-
-        ### Add source package to database
-
-        # We need to install the .dsc first as the DBSource object refers to it.
-        db_file_dsc = self._install_file(directory, source._dsc_file, archive, component, source_name)
-
-        unique = dict(
-            source=source_name,
-            version=control['Version'],
-            )
-        rest = dict(
-            maintainer=maintainer,
-            changedby=changed_by,
-            #install_date=datetime.now().date(),
-            poolfile=db_file_dsc,
-            fingerprint=fingerprint,
-            dm_upload_allowed=(control.get('DM-Upload-Allowed', 'no') == 'yes'),
-            )
-
-        created = False
-        try:
-            db_source = session.query(DBSource).filter_by(**unique).one()
-            for key, value in rest.iteritems():
-                if getattr(db_source, key) != value:
-                    raise ArchiveException('{0}: Does not match source in database.'.format(source._dsc_file.filename))
-        except NoResultFound:
-            created = True
-            db_source = DBSource(**unique)
-            for key, value in rest.iteritems():
-                setattr(db_source, key, value)
-            # XXX: set as default in postgres?
-            db_source.install_date = datetime.now().date()
-            session.add(db_source)
-            session.flush()
-
-            # Add .dsc file. Other files will be added later.
-            db_dsc_file = DSCFile()
-            db_dsc_file.source = db_source
-            db_dsc_file.poolfile = db_file_dsc
-            session.add(db_dsc_file)
-            session.flush()
+        db_source = self.install_source_to_archive(directory, source, suite.archive, component, changed_by, allow_tainted, fingerprint)
 
         if suite in db_source.suites:
             return db_source
-
         db_source.suites.append(suite)
-
-        if not created:
-            for f in db_source.srcfiles:
-                self._copy_file(f.poolfile, archive, component, allow_tainted=allow_tainted)
-            return db_source
-
-        ### Now add remaining files and copy them to the archive.
-
-        for hashed_file in source.files.itervalues():
-            hashed_file_path = os.path.join(directory, hashed_file.filename)
-            if os.path.exists(hashed_file_path):
-                db_file = self._install_file(directory, hashed_file, archive, component, source_name)
-                session.add(db_file)
-            else:
-                db_file = self.get_file(hashed_file, source_name)
-                self._copy_file(db_file, archive, component, allow_tainted=allow_tainted)
-
-            db_dsc_file = DSCFile()
-            db_dsc_file.source = db_source
-            db_dsc_file.poolfile = db_file
-            session.add(db_dsc_file)
-
-        session.flush()
-
-        # Importing is safe as we only arrive here when we did not find the source already installed earlier.
-        import_metadata_into_db(db_source, session)
-
-        # Uploaders are the maintainer and co-maintainers from the Uploaders field
-        db_source.uploaders.append(maintainer)
-        if 'Uploaders' in control:
-            from daklib.textutils import split_uploaders
-            for u in split_uploaders(control['Uploaders']):
-                db_source.uploaders.append(get_or_set_maintainer(u, session))
-        session.flush()
+        self.session.flush()
 
         return db_source
 
@@ -530,6 +540,9 @@ class ArchiveTransaction(object):
         """rollback changes"""
         self.session.rollback()
         self.fs.rollback()
+
+    def flush(self):
+        self.session.flush()
 
     def __enter__(self):
         return self

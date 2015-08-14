@@ -2,10 +2,10 @@
 # coding=utf8
 
 """
-Make external overrides specific for (suite, component)
+Change indices for {src,bin}_contents
 
 @contact: Debian FTP Master <ftpmaster@debian.org>
-@copyright: 2011 Ansgar Burchardt <ansgar@debian.org>
+@copyright: 2015, Ansgar Burchardt <ansgar@debian.org>
 @license: GNU General Public License version 2 or later
 """
 
@@ -27,30 +27,61 @@ Make external overrides specific for (suite, component)
 
 import psycopg2
 from daklib.dak_exceptions import DBUpdateError
+from daklib.config import Config
+
+statements = [
+"""
+DROP INDEX IF EXISTS ind_bin_contents_binary
+""",
+"""
+ALTER TABLE bin_contents
+  DROP CONSTRAINT IF EXISTS bin_contents_pkey
+""",
+"""
+CREATE UNIQUE INDEX bin_contents_pkey
+  ON bin_contents (binary_id, file) WITH (fillfactor = 80)
+""",
+"""
+ALTER TABLE bin_contents
+  ADD PRIMARY KEY USING INDEX bin_contents_pkey
+""",
+"""
+CLUSTER bin_contents USING bin_contents_pkey
+""",
+"""
+DROP INDEX IF EXISTS src_contents_source_id_idx
+""",
+"""
+ALTER TABLE src_contents
+  DROP CONSTRAINT IF EXISTS src_contents_pkey
+""",
+"""
+CREATE UNIQUE INDEX src_contents_pkey
+  ON src_contents (source_id, file) WITH (fillfactor = 80)
+""",
+"""
+ALTER TABLE src_contents
+  ADD PRIMARY KEY USING INDEX src_contents_pkey
+""",
+"""
+CLUSTER src_contents USING src_contents_pkey
+""",
+]
 
 ################################################################################
 def do_update(self):
-    """
-    Make external overrides specific for (suite, component)
-    """
     print __doc__
     try:
+        cnf = Config()
+
         c = self.db.cursor()
 
-        c.execute("DELETE FROM external_overrides")
-        print "NOTE: Please reimport the external overrides."
+        for stmt in statements:
+            c.execute(stmt)
 
-        c.execute("""
-        ALTER TABLE external_overrides
-            DROP CONSTRAINT external_overrides_pkey,
-            ADD COLUMN suite INTEGER NOT NULL REFERENCES suite(id),
-            ADD COLUMN component INTEGER NOT NULL REFERENCES component(id),
-            ADD PRIMARY KEY (suite, component, package, key)
-        """)
-
-        c.execute("UPDATE config SET value = '60' WHERE name = 'db_revision'")
+        c.execute("UPDATE config SET value = '109' WHERE name = 'db_revision'")
         self.db.commit()
 
     except psycopg2.ProgrammingError as msg:
         self.db.rollback()
-        raise DBUpdateError('Unable to apply sick update 60, rollback issued. Error message : %s' % (str(msg)))
+        raise DBUpdateError('Unable to apply sick update 109, rollback issued. Error message: {0}'.format(msg))

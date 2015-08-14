@@ -26,12 +26,12 @@ if ! lockfile -r100 "$LOCKFILE"; then
 fi
 trap cleanup EXIT
 
-dak generate-releases -a security
+dak generate-releases -a security >/dev/null
 
 cleanup
 trap - EXIT
 
-/srv/security-master.debian.org/dak/config/debian-security/make-mirror.sh
+/srv/security-master.debian.org/dak/config/debian-security/make-mirror.sh >/dev/null
 sudo -u archvsync -H /home/archvsync/signal_security
 
 

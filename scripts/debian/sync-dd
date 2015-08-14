@@ -58,7 +58,7 @@ cleanup() {
 trap cleanup EXIT TERM HUP INT QUIT
 
 # Also, NEVER use --delete-excluded!
-if lockfile -r3 "${lockfile}"; then
+if lockfile -r3 "${lockfile}" 2> /dev/null; then
     case "${mode}" in
         sync)
             rsync -aH -B8192 \
@@ -81,6 +81,7 @@ if lockfile -r3 "${lockfile}"; then
                   --exclude "/scripts/s3kr1t" \
                   --exclude "/tmp/" \
                   --exclude "/public/incoming.debian.org" \
+                  --exclude "/tiffani/" \
                   --delete --delete-after \
                   --timeout 3600 \
                   -e 'ssh -o ConnectTimeout=30 -o SetupTimeout=30' \
@@ -118,6 +119,6 @@ if lockfile -r3 "${lockfile}"; then
             ;;
     esac
 else
-    echo "Couldn't get the lock, not syncing"
+    #echo "Couldn't get the lock, not syncing"
     exit 0
 fi
