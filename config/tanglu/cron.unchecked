@@ -83,7 +83,7 @@ function do_dists () {
 }
 
 function do_debile_incoming () {
-    [ "$(ls -A /pub/ftp/incoming)" ] && sudo -u ftp chmod 066 /pub/ftp/incoming/*
+    [ "$(ls -A /pub/ftp/incoming)" ] && find /pub/ftp/incoming/ -type f -print0 | sudo -u ftp xargs -0 chmod 066
     sudo -u debile debile-process-incoming
 }
 
