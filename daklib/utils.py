@@ -59,7 +59,7 @@ from textutils import fix_maintainer
 from regexes import re_html_escaping, html_escaping, re_single_line_field, \
                     re_multi_line_field, re_srchasver, re_taint_free, \
                     re_re_mark, re_whitespace_comment, re_issource, \
-                    re_is_orig_source, re_build_dep_arch, re_parse_maintainer
+                    re_build_dep_arch, re_parse_maintainer
 
 from formats import parse_format, validate_changes_format
 from srcformats import get_format_from_string
@@ -276,7 +276,7 @@ def parse_changes(filename, signing_rules=0, dsc_file=0, keyrings=None):
                 missingfields.append(keyword)
 
                 if len(missingfields):
-                    raise ParseChangesError("Missing mandantory field(s) in changes file (policy 5.5): %s" % (missingfields))
+                    raise ParseChangesError("Missing mandatory field(s) in changes file (policy 5.5): %s" % (missingfields))
 
     return changes
 
@@ -1325,3 +1325,17 @@ def parse_built_using(control):
         bu.append((source_name, source_version))
 
     return bu
+
+################################################################################
+
+def is_in_debug_section(control):
+    """binary package is a debug package
+
+    @type  control: dict-like
+    @param control: control file of binary package
+
+    @rtype Boolean
+    @return: True if the binary package is a debug package
+    """
+    section = control['Section'].split('/', 1)[-1]
+    return section == "debug"

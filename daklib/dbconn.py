@@ -113,7 +113,7 @@ if sa_major_version in ["0.5", "0.6", "0.7", "0.8", "0.9"]:
     from sqlalchemy.databases import postgres
     postgres.ischema_names['debversion'] = DebVersion
 else:
-    raise Exception("dak only ported to SQLA versions 0.5 to 0.9.  See daklib/dbconn.py")
+    raise Exception("dak only ported to SQLA versions 0.5 to 0.9 (%s installed).  See daklib/dbconn.py" % sa_major_version)
 
 ################################################################################
 
@@ -1721,7 +1721,7 @@ class DBSource(ORMObject):
             'install_date', 'binaries_count', 'uploaders_count']
 
     def not_null_constraints(self):
-        return ['source', 'version', 'install_date', 'maintainer', \
+        return ['source', 'version', 'maintainer', \
             'changedby', 'poolfile']
 
     def read_control_fields(self):
@@ -2548,6 +2548,7 @@ class DBConn(object):
                properties = dict(suite_id = self.tbl_suite.c.id,
                                  policy_queue = relation(PolicyQueue, primaryjoin=(self.tbl_suite.c.policy_queue_id == self.tbl_policy_queue.c.id)),
                                  new_queue = relation(PolicyQueue, primaryjoin=(self.tbl_suite.c.new_queue_id == self.tbl_policy_queue.c.id)),
+                                 debug_suite = relation(Suite, remote_side=[self.tbl_suite.c.id]),
                                  copy_queues = relation(BuildQueue,
                                      secondary=self.tbl_suite_build_queue_copy),
                                  srcformats = relation(SrcFormat, secondary=self.tbl_suite_src_formats,

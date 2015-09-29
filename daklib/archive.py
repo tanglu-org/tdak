@@ -274,7 +274,6 @@ class ArchiveTransaction(object):
             )
         rest = dict(
             maintainer=maintainer,
-            #install_date=datetime.now().date(),
             poolfile=db_file_dsc,
             dm_upload_allowed=(control.get('DM-Upload-Allowed', 'no') == 'yes'),
             )
@@ -298,8 +297,6 @@ class ArchiveTransaction(object):
                 setattr(db_source, key, value)
             for key, value in rest2.iteritems():
                 setattr(db_source, key, value)
-            # XXX: set as default in postgres?
-            db_source.install_date = datetime.now().date()
             session.add(db_source)
             session.flush()
 
@@ -1028,14 +1025,33 @@ class ArchiveUpload(object):
         source = self.changes.source
         if source is not None:
             component = source_component_func(source)
-            db_source = self.transaction.install_source(self.directory, source, suite, component, changed_by, fingerprint=self.fingerprint)
+            db_source = self.transaction.install_source(
+                self.directory,
+                source,
+                suite,
+                component,
+                changed_by,
+                fingerprint=self.fingerprint
+            )
         else:
             db_source = None
 
         db_binaries = []
         for binary in self.changes.binaries:
+            copy_to_suite = suite
+            if utils.is_in_debug_section(binary.control) and suite.debug_suite is not None:
+                copy_to_suite = suite.debug_suite
+
             component = binary_component_func(binary)
-            db_binary = self.transaction.install_binary(self.directory, binary, suite, component, fingerprint=self.fingerprint, source_suites=source_suites, extra_source_archives=extra_source_archives)
+            db_binary = self.transaction.install_binary(
+                self.directory,
+                binary,
+                copy_to_suite,
+                component,
+                fingerprint=self.fingerprint,
+                source_suites=source_suites,
+                extra_source_archives=extra_source_archives
+            )
             db_binaries.append(db_binary)
 
         if suite.copychanges:

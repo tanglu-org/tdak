@@ -47,7 +47,7 @@ $max_delayed = -1;
 $keep_files = '(status|\.message|README)$';
 
 # file patterns that aren't deleted right away
-$valid_files = '(\.changes|\.tar\.(?:gz|bz2|xz)|\.dsc|\.u?deb|diff\.gz|\.sh)$';
+$valid_files = '(\.changes|\.tar\.(?:gz|bz2|xz)|\.dsc|\.u?deb|diff\.gz|\.sh|\.asc)(\.[A-Za-z0-9]{6})?$';
 
 # Change files to mode 644 locally (after md5 check) or only on master?
 $chmod_on_target = 0;
@@ -75,6 +75,7 @@ $statusdelay = 30;
               "/srv/keyring.debian.org/keyrings/buildd-keyrings/buildd-ia64-keyring.gpg",
               "/srv/keyring.debian.org/keyrings/buildd-keyrings/buildd-kfreebsd-amd64-keyring.gpg",
               "/srv/keyring.debian.org/keyrings/buildd-keyrings/buildd-kfreebsd-i386-keyring.gpg",
+              "/srv/keyring.debian.org/keyrings/buildd-keyrings/buildd-mips64el-keyring.gpg",
               "/srv/keyring.debian.org/keyrings/buildd-keyrings/buildd-mipsel-keyring.gpg",
               "/srv/keyring.debian.org/keyrings/buildd-keyrings/buildd-mips-keyring.gpg",
               "/srv/keyring.debian.org/keyrings/buildd-keyrings/buildd-powerpc-keyring.gpg",
