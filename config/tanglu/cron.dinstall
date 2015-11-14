@@ -192,15 +192,6 @@ GO=(
 )
 stage $GO
 
-# FIXME-TANGLU: Localisation needs more work, enable again later
-#GO=(
-#    FUNC="i18n1"
-#    TIME="i18n 1"
-#    ARGS=""
-#    ERR="false"
-#)
-#stage $GO
-
 lockfile "$LOCK_ACCEPTED"
 lockfile "$LOCK_NEW"
 trap remove_all_locks EXIT TERM HUP INT QUIT
@@ -412,15 +403,6 @@ GO=(
     ERR="false"
 )
 stage $GO &
-
-# FIXME-TANGLU: Localisation needs more work, enable again later
-#GO=(
-#    FUNC="i18n2"
-#    TIME="i18n 2"
-#    ARGS=""
-#    ERR="false"
-#)
-#stage $GO &
 
 GO=(
     FUNC="stats"

@@ -44,45 +44,6 @@ function updates() {
     $scriptsdir/update-mirrorlists
 }
 
-# The first i18n one, syncing new descriptions
-function i18n1() {
-    log "Synchronizing i18n package descriptions"
-    # First sync their newest data
-    cd ${scriptdir}/i18nsync
-    rsync -aq --delete --delete-after ddtp-sync:/does/not/matter . || true
-
-    # Now check if we still know about the packages for which they created the files
-    # is the timestamp signed by us?
-    if $(gpgv --keyring /srv/dak/keyrings/s3kr1t/dot-gnupg/pubring.gpg timestamp.gpg timestamp); then
-        # now read it. As its signed by us we are sure the content is what we expect, no need
-        # to do more here. And we only test -d a directory on it anyway.
-        TSTAMP=$(cat timestamp)
-        # do we have the dir still?
-        if [ -d ${scriptdir}/i18n/${TSTAMP} ]; then
-            # Lets check!
-            if ${scriptsdir}/ddtp-i18n-check.sh . ${scriptdir}/i18n/${TSTAMP}; then
-                # Yay, worked, lets copy around
-                for dir in chromodoris; do
-                    if [ -d dists/${dir}/ ]; then
-                        cd dists/${dir}/main/i18n
-                        rsync -aq --delete --delete-after --exclude Translation-en.bz2 --exclude Translation-*.diff/ . ${ftpdir}/dists/${dir}/main/i18n/.
-                    fi
-                    cd ${scriptdir}/i18nsync
-                done
-            else
-                echo "ARRRR, bad guys, wrong files, ARRR"
-                echo "Arf, Arf, Arf, bad guys, wrong files, arf, arf, arf" | mail -a "X-Debian: DAK" -s "Don't you kids take anything. I'm watching you. I've got eye implants in the back of my head." debian-l10n-devel@lists.alioth.debian.orgX
-            fi
-        else
-            echo "ARRRR, missing the timestamp ${TSTAMP} directory, not updating i18n, ARRR"
-            echo "Arf, Arf, Arf, missing the timestamp ${TSTAMP} directory, not updating i18n, arf, arf, arf" | mail -a "X-Debian: DAK" -s "Lisa, if you don't like your job you don't strike. You just go in every day and do it really half-assed. That's the American way." debian-l10n-devel@lists.alioth.debian.orgX
-        fi
-    else
-        echo "ARRRRRRR, could not verify our timestamp signature, ARRR. Don't mess with our files, i18n guys, ARRRRR."
-        echo "Arf, Arf, Arf, could not verify our timestamp signature, arf. Don't mess with our files, i18n guys, arf, arf, arf" | mail -a "X-Debian: DAK" -s "You can't keep blaming yourself. Just blame yourself once, and move on." debian-l10n-devel@lists.alioth.debian.orgX
-    fi
-}
-
 function cruft() {
     log "Checking for cruft in overrides"
     dak check-overrides
@@ -172,16 +133,6 @@ function mirror() {
 }
 
 function release() {
-    # XXX: disable once we can remove i18n/Index (#649314)
-    # FIXME-TANGLU: Disabled for now, i18n does not work properly yet
-    #log "Generating i18n/Index"
-    #(
-    #    cd "$ftpdir/dists";
-    #    for dist in aequorea aequorea-updates; do
-    #        $scriptsdir/generate-i18n-Index $dist;
-    #    done
-    #)
-
     log "Generating Release files"
     for archive in "${public_archives[@]}"; do
         dak generate-releases -a "${archive}"
@@ -369,15 +320,6 @@ function mkfilesindices() {
         sort -u | poolfirst > ../arch-$a.files
     done
 
-    (cd $base/ftp/
-	    for dist in staging bartholomea chromodoris; do
-		    find ./dists/$dist/main/i18n/ \! -type d | sort -u | gzip -9 > $base/ftp/indices/files/components/translation-$dist.list.gz
-	    done
-    )
-
-    (cat ../arch-i386.files ../arch-amd64.files; zcat suite-proposed-updates.list.gz ; zcat translation-bartholomea.list.gz ; zcat translation-wheezy.list.gz) |
-    sort -u | poolfirst > ../typical.files
-
     rm -f $ARCHLIST
     log "Done!"
     set -o pipefail
@@ -461,28 +403,6 @@ function mirrorpush() {
 #    echo "Using dak v1" >> /srv/archive.debian.org/web/mirrorstart
 #    echo "Running on host $(hostname -f)" >> /srv/archive.debian.org/web/mirrorstart
 #    sudo -H -u archvsync /home/archvsync/runmirrors > ~dak/runmirrors.log 2>&1 &
-}
-
-function i18n2() {
-    log "Exporting package data foo for i18n project"
-    STAMP=$(date "+%Y%m%d%H%M")
-    mkdir -p ${scriptdir}/i18n/${STAMP}
-    cd ${scriptdir}/i18n/${STAMP}
-    for suite in stable testing unstable; do
-        codename=$(dak admin s show ${suite}|grep '^Codename')
-        codename=${codename##* }
-        echo "Codename is ${codename}"
-        dak control-suite -l ${suite} >${codename}
-    done
-    echo "${STAMP}" > timestamp
-    gpg --secret-keyring /srv/dak/keyrings/s3kr1t/dot-gnupg/secring.gpg --keyring /srv/dak/keyrings/s3kr1t/dot-gnupg/pubring.gpg --no-options --batch --no-tty --armour --default-key 119AE60F --detach-sign -o timestamp.gpg timestamp
-    rm -f md5sum
-    md5sum * > md5sum
-    cd ${webdir}/
-    ln -sfT ${scriptdir}/i18n/${STAMP} i18n
-
-    cd ${scriptdir}
-    find ./i18n -mindepth 1 -maxdepth 1 -mtime +2 -not -name "${STAMP}" -type d -print0 | xargs --no-run-if-empty -0 rm -rf
 }
 
 function stats() {
