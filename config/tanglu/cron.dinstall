@@ -273,14 +273,6 @@ GO=(
 stage $GO
 
 GO=(
-    FUNC="gitpdiff"
-    TIME="gitpdiff"
-    ARGS=""
-    ERR=""
-)
-#stage $GO
-
-GO=(
     FUNC="release"
     TIME="release files"
     ARGS=""
