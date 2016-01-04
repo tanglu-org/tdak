@@ -1123,7 +1123,7 @@ def call_editor(text="", suffix=".txt"):
 
 ################################################################################
 
-def check_reverse_depends(removals, suite, arches=None, session=None, cruft=False, quiet=False):
+def check_reverse_depends(removals, suite, arches=None, session=None, cruft=False, quiet=False, include_arch_all=True):
     dbsuite = get_suite(suite, session)
     overridesuite = dbsuite
     if dbsuite.overridesuite is not None:
@@ -1144,7 +1144,11 @@ def check_reverse_depends(removals, suite, arches=None, session=None, cruft=Fals
         'metakey_d_id': metakey_d.key_id,
         'metakey_p_id': metakey_p.key_id,
     }
-    for architecture in all_arches | set(['all']):
+    if include_arch_all:
+        rdep_architectures = all_arches | set(['all'])
+    else:
+        rdep_architectures = all_arches
+    for architecture in rdep_architectures:
         deps = {}
         sources = {}
         virtual_packages = {}
@@ -1238,16 +1242,21 @@ def check_reverse_depends(removals, suite, arches=None, session=None, cruft=Fals
     all_broken = defaultdict(set)
     metakey_bd = get_or_set_metadatakey("Build-Depends", session)
     metakey_bdi = get_or_set_metadatakey("Build-Depends-Indep", session)
+    if include_arch_all:
+        metakey_ids = (metakey_bd.key_id, metakey_bdi.key_id)
+    else:
+        metakey_ids = (metakey_bd.key_id,)
+
     params = {
         'suite_id':    dbsuite.suite_id,
-        'metakey_ids': (metakey_bd.key_id, metakey_bdi.key_id),
+        'metakey_ids': metakey_ids,
     }
     statement = '''
         SELECT s.source, string_agg(sm.value, ', ') as build_dep
            FROM source s
            JOIN source_metadata sm ON s.id = sm.src_id
            WHERE s.id in
-               (SELECT source FROM src_associations
+               (SELECT src FROM newest_src_association
                    WHERE suite = :suite_id)
                AND sm.key_id in :metakey_ids
            GROUP BY s.id, s.source'''
@@ -1338,4 +1347,5 @@ def is_in_debug_section(control):
     @return: True if the binary package is a debug package
     """
     section = control['Section'].split('/', 1)[-1]
-    return section == "debug"
+    auto_built_package = control.get("Auto-Built-Package")
+    return section == "debug" and auto_built_package == "debug-symbols"

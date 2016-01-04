@@ -2,11 +2,8 @@
 # usually we are not using debug logs. Set to 1 if you want them.
 DEBUG=0
 
-# our name
-PROGRAM="dinstall"
-
 # where do we want mails to go? For example log entries made with error()
-if [ "x$(hostname -s)x" != "xfranckx" ]; then
+if [[ ${HOSTNAME} != franck ]]; then
     # Not our ftpmaster host
     MAILTO=${MAILTO:-"root"}
 else
@@ -22,8 +19,8 @@ DINSTALLSTART="${lockdir}/dinstallstart"
 # Marker for dinstall end
 DINSTALLEND="${lockdir}/dinstallend"
 
-# lock cron.unchecked (it immediately exits when this exists)
-LOCK_DAILY="$lockdir/daily.lock"
+# Timestamp for start
+DINSTALLBEGIN="$(date -u +"%a %b %d %T %Z %Y (%s)")"
 
 # Lock cron.unchecked from doing work
 LOCK_ACCEPTED="$lockdir/unchecked.lock"
@@ -46,7 +43,18 @@ LOCK_CHANGELOG="$lockdir/changelog.lock"
 # Statefile for the users
 DINSTALLSTATE="${webdir}/dinstall.status"
 
-TRACEFILE="${ftpdir}/project/trace/ftp-master.debian.org"
+# dists for which we import external data (i18n, dep11)
+# as thats usually testing and unstable, but we need codenames,
+# get em out of the db.
+extimportdists=""
+for suite in testing unstable; do
+    codename=$(dak admin s show ${suite}|grep '^Codename')
+    codename=${codename##* }
+    extimportdists="${extimportdists} ${codename}"
+done
 
-archiveroot="$(get_archiveroot "backports")"
-TRACEFILE_BDO="${archiveroot}/project/trace/ftp-master.debian.org"
+# Common wget options
+wgetopts="-t2 -T20 -q -N --ca-directory=/etc/ssl/ca-debian"
+
+# dinstall wants timestamps added to stage logs
+TIMESTAMP=true

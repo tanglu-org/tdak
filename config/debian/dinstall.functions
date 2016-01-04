@@ -1,13 +1,4 @@
 # -*- mode:sh -*-
-# Timestamp. Used for dinstall stat graphs
-function ts() {
-        echo "Archive maintenance timestamp ($1): $(date +%H:%M:%S)"
-}
-
-# Remove daily lock
-function remove_daily_lock() {
-    rm -f $LOCK_DAILY
-}
 
 # Remove changelog lock
 function remove_changelog_lock() {
@@ -19,19 +10,32 @@ function remove_all_locks() {
     rm -f $LOCK_DAILY $LOCK_ACCEPTED
 }
 
-# If we error out this one is called, *FOLLOWED* by cleanup above
+# Get rid of all locks and unset the trap
+function remove_locks {
+    remove_all_locks
+    trap - EXIT TERM HUP INT QUIT
+    ts "locked part finished"
+}
+
+# Lock accepted
+function lockaccepted {
+    lockfile "$LOCK_ACCEPTED"
+    trap remove_all_locks EXIT TERM HUP INT QUIT
+}
+
+# If we error out this one is called, *FOLLOWED* by cleanup in common
 function onerror() {
     ERRDATE=$(date "+%Y.%m.%d-%H:%M:%S")
 
     subject="ATTENTION ATTENTION!"
-    if [ "${error}" = "false" ]; then
+    if [[ ${error} = false  ]]; then
         subject="${subject} (continued)"
     else
         subject="${subject} (interrupted)"
     fi
     subject="${subject} dinstall error at ${ERRDATE} in ${STAGEFILE} - (Be quiet, Brain, or I'll stab you with a Q-tip)"
 
-    if [ -r "${STAGEFILE}.log" ]; then
+    if [[ -r ${STAGEFILE}.log  ]]; then
         cat "${STAGEFILE}.log"
     else
         echo "file ${STAGEFILE}.log does not exist, sorry"
@@ -39,23 +43,57 @@ function onerror() {
 }
 
 ########################################################################
-# the actual dinstall functions follow                                 #
+# the actual functions follow                                          #
 ########################################################################
 
 # pushing merkels QA user, part one
 function qa1() {
     log "Telling QA user that we start dinstall"
-    ssh -2 -i ~dak/.ssh/push_merkel_qa  -o BatchMode=yes -o SetupTimeOut=90 -o ConnectTimeout=90 qa@qa.debian.org sleep 1
+    ssh -n -2 -i ~dak/.ssh/push_merkel_qa  -o BatchMode=yes -o SetupTimeOut=90 -o ConnectTimeout=90 qa@qa.debian.org sleep 1
+}
+
+function mirrorlists() {
+    local mldir="${scriptdir}/mirrorlist"
+    local masterlist=${mldir}/Mirrors.masterlist
+
+    cd ${mldir}
+
+    [[ -f ${HOME}/.cvspass ]] || touch ${HOME}/.cvspass
+
+    grep -q "anonscm.debian.org:/cvs/webwml" ~/.cvspass || \
+	echo ":pserver:anonymous@anonscm.debian.org:/cvs/webwml A" >> ${HOME}/.cvspass
+
+    cvs update
+
+    if [[ ! -f ${ftpdir}/README.mirrors.html ]] || [[ ${masterlist} -nt ${ftpdir}/README.mirrors.html ]]; then
+	rm -f ${ftpdir}/README.mirrors.{html,txt}
+	${mldir}/mirror_list.pl -m ${masterlist} -t html > ${ftpdir}/README.mirrors.html
+	${mldir}/mirror_list.pl -m ${masterlist} -t text > ${ftpdir}/README.mirrors.txt
+	log Updated archive version of mirrors file
+    fi
+}
+
+function mailingliststxt() {
+    cd ${ftpdir}/doc
+
+    log "Updating archive version of mailing-lists.txt"
+    wget ${wgetopts} https://www.debian.org/misc/mailing-lists.txt
+}
+
+function pseudopackages() {
+    cd ${scriptdir}/masterfiles
+
+    log "Updating archive version of pseudo-packages"
+    for file in maintainers description; do
+	wget ${wgetopts} https://bugs.debian.org/pseudopackages/pseudo-packages.${file}
+    done
 }
 
 # Updating various files
-function updates() {
-    log "Updating Bugs docu, Mirror list and mailing-lists.txt"
+function bugdoctxt() {
+    log "Updating Bugs docu"
     cd $configdir
     $scriptsdir/update-bugdoctxt
-    $scriptsdir/update-mirrorlists
-    $scriptsdir/update-mailingliststxt
-    $scriptsdir/update-pseudopackages.sh
 }
 
 # The first i18n one, syncing new descriptions
@@ -72,12 +110,12 @@ function i18n1() {
         # to do more here. And we only test -d a directory on it anyway.
         TSTAMP=$(cat timestamp)
         # do we have the dir still?
-        if [ -d ${scriptdir}/i18n/${TSTAMP} ]; then
+        if [[ -d ${scriptdir}/i18n/${TSTAMP}  ]]; then
             # Lets check!
             if ${scriptsdir}/ddtp-i18n-check.sh . ${scriptdir}/i18n/${TSTAMP}; then
                 # Yay, worked, lets copy around
-                for dir in stretch sid; do
-                    if [ -d dists/${dir}/ ]; then
+                for dir in ${extimportdists}; do
+                    if [[ -d dists/${dir}/  ]]; then
                         cd dists/${dir}/main/i18n
                         rsync -aq --delete --delete-after --exclude Translation-en.bz2 --exclude Translation-*.diff/ . ${ftpdir}/dists/${dir}/main/i18n/.
                     fi
@@ -97,6 +135,34 @@ function i18n1() {
     fi
 }
 
+# Syncing AppStream/DEP-11 data
+function dep11() {
+    log "Synchronizing AppStream metadata"
+    # First sync their newest data
+    local dep11dir="${scriptdir}/dep11"
+    mkdir -p ${dep11dir}
+    cd ${dep11dir}
+    rsync -aq --delete --delete-after dep11-sync:/does/not/matter . || true
+
+    # Lets check!
+    if ${scriptsdir}/dep11-basic-validate.py . ${dep11dir}/; then
+        # Yay, worked, lets copy around
+        for dir in ${extimportdists}; do
+            if [[ -d ${dir}/  ]]; then
+                for comp in main contrib non-free; do
+                    mkdir -p ${ftpdir}/dists/${dir}/${comp}/dep11
+                    cd ${dir}/${comp}
+                    rsync -aq --delete --delete-after --exclude *.tmp . ${ftpdir}/dists/${dir}/${comp}/dep11/.
+                    cd ${dep11dir}
+                done
+            fi
+        done
+    else
+        echo "ARRRR, bad guys, wrong files, ARRR"
+        echo "Arf, Arf, Arf, bad guys, wrong files, arf, arf, arf" | mail -a "X-Debian: DAK" -s "Don't you kids take anything. I'm watching you. I've got eye implants in the back of my head." -a "From: Debian FTP Masters <ftpmaster@ftp-master.debian.org>" mak@debian.org
+    fi
+}
+
 function cruft() {
     log "Checking for cruft in overrides"
     dak check-overrides
@@ -105,6 +171,7 @@ function cruft() {
 function dominate() {
     log "Removing obsolete source and binary associations"
     dak dominate
+    dak manage-debug-suites unstable-debug experimental-debug
 }
 
 function autocruft() {
@@ -117,10 +184,10 @@ function fingerprints() {
     log "Updating fingerprints"
     dak import-keyring -L /srv/keyring.debian.org/keyrings/debian-keyring.gpg
 
-    OUTFILE=$(mktemp)
+    OUTFILE=$( gettempfile )
     dak import-keyring --generate-users "%s" /srv/keyring.debian.org/keyrings/debian-maintainers.gpg >"${OUTFILE}"
 
-    if [ -s "${OUTFILE}" ]; then
+    if [[ -s ${OUTFILE} ]]; then
         /usr/sbin/sendmail -odq -oi -t -f envelope@ftp-master.debian.org <<EOF
 From: Debian FTP Masters <ftpmaster@ftp-master.debian.org>
 To: <debian-project@lists.debian.org>
@@ -152,13 +219,13 @@ function mpfm() {
 
     log "Generating package / file mapping"
     for archive in "${public_archives[@]}"; do
+        log "  archive: ${archive}"
         archiveroot="$(get_archiveroot "${archive}")"
         dak make-pkg-file-mapping "${archive}" | bzip2 -9 > "${archiveroot}/indices/package-file.map.bz2"
     done
 }
 
 function packages() {
-    log "Generating Packages and Sources files"
     for archive in "${public_archives[@]}"; do
         log "  Generating Packages/Sources for ${archive}"
         dak generate-packages-sources2 -a "${archive}"
@@ -175,6 +242,7 @@ function pdiff() {
 function release() {
     log "Generating Release files"
     for archive in "${public_archives[@]}"; do
+        log "  archive: ${archive}"
         dak generate-releases -a "${archive}"
     done
 }
@@ -214,7 +282,7 @@ function mkmaintainers() {
     for archive in "${public_archives[@]}"; do
         archiveroot="$(get_archiveroot "${archive}")"
 	indices="${archiveroot}/indices"
-	if ! [ -d "${indices}" ]; then
+	if ! [[ -d ${indices} ]]; then
 	    mkdir "${indices}"
 	fi
         cd "${indices}"
@@ -281,11 +349,11 @@ function mkfilesindices() {
     ARCHES=$( (<$ARCHLIST sed -n 's/^.*|//p'; echo amd64) | grep . | grep -v all | sort -u)
     for a in $ARCHES; do
         (sed -n "s/|$a$//p" $ARCHLIST
-            sed -n 's/|all$//p' $ARCHLIST
+         sed -n 's/|all$//p' $ARCHLIST
 
-            cd $base/ftp
-            find ./dists -maxdepth 1 \! -type d
-            find ./dists \! -type d | grep -E "(proposed-updates.*_$a.changes$|/main/disks-$a/|/main/installer-$a/|/Contents-$a|/binary-$a/)"
+         cd $base/ftp
+         find ./dists -maxdepth 1 \! -type d
+         find ./dists \! -type d | grep -E "(proposed-updates.*_$a.changes$|/main/disks-$a/|/main/installer-$a/|/Contents-$a|/binary-$a/)"
         ) | sort -u | gzip -9 > arch-$a.list.gz
     done
 
@@ -332,43 +400,43 @@ function mkfilesindices() {
     }
 
     psql -F' ' -At -c "SELECT id, suite_name FROM suite" |
-    while read id suite; do
-        [ -e $base/ftp/dists/$suite ] || continue
-        (
-            (cd $base/ftp
-                distname=$(cd dists; readlink $suite || echo $suite)
-                find ./dists/$distname \! -type d
-                for distdir in ./dists/*; do
-                    [ "$(readlink $distdir)" != "$distname" ] || echo $distdir
-                done
-            )
-            suite_list $id
-        ) | sort -u | gzip -9 > suite-${suite}.list.gz
-    done
+        while read id suite; do
+            [[ -e $base/ftp/dists/$suite ]] || continue
+            (
+                (cd $base/ftp
+                 distname=$(cd dists; readlink $suite || echo $suite)
+                 find ./dists/$distname \! -type d
+                 for distdir in ./dists/*; do
+                     [[ $(readlink $distdir) != $distname ]] || echo $distdir
+                 done
+                )
+                suite_list $id
+            ) | sort -u | gzip -9 > suite-${suite}.list.gz
+        done
 
     log "Finding everything on the ftp site to generate sundries"
     (cd $base/ftp; find . \! -type d \! -name 'Archive_Maintenance_In_Progress' | sort) >$ARCHLIST
 
     rm -f sundries.list
     zcat *.list.gz | cat - *.list | sort -u |
-    diff - $ARCHLIST | sed -n 's/^> //p' > sundries.list
+        diff - $ARCHLIST | sed -n 's/^> //p' > sundries.list
 
     log "Generating files list"
 
     for a in $ARCHES; do
         (echo ./project/trace; zcat arch-$a.list.gz source.list.gz) |
-        cat - sundries.list dists.list project.list docs.list indices.list |
-        sort -u | poolfirst > ../arch-$a.files
+            cat - sundries.list dists.list project.list docs.list indices.list |
+            sort -u | poolfirst > ../arch-$a.files
     done
 
     (cd $base/ftp/
-	    for dist in sid jessie stretch; do
-		    find ./dists/$dist/main/i18n/ \! -type d | sort -u | gzip -9 > $base/ftp/indices/files/components/translation-$dist.list.gz
-	    done
+     for dist in sid jessie stretch; do
+	 find ./dists/$dist/main/i18n/ \! -type d | sort -u | gzip -9 > $base/ftp/indices/files/components/translation-$dist.list.gz
+     done
     )
 
     (cat ../arch-i386.files ../arch-amd64.files; zcat suite-proposed-updates.list.gz ; zcat translation-sid.list.gz ; zcat translation-jessie.list.gz ; zcat translation-stretch.list.gz) |
-    sort -u | poolfirst > ../typical.files
+        sort -u | poolfirst > ../typical.files
 
     rm -f $ARCHLIST
     log "Done!"
@@ -393,47 +461,48 @@ function mkchecksums() {
 }
 
 function mirror() {
-    local archiveroot mirrordir
-
-    log "Regenerating \"public\" mirror/ hardlink fun"
-    DATE_SERIAL=$(date +"%Y%m%d01")
-    FILESOAPLUS1=$(awk '/serial/ { print $3+1 }' ${TRACEFILE} )
-    if [ "$DATE_SERIAL" -gt "$FILESOAPLUS1" ]; then
-        SERIAL="$DATE_SERIAL"
-    else
-        SERIAL="$FILESOAPLUS1"
-    fi
-    date -u > ${TRACEFILE}
-    echo "Using dak v1" >> ${TRACEFILE}
-    echo "Running on host: $(hostname -f)" >> ${TRACEFILE}
-    echo "Archive serial: ${SERIAL}" >> ${TRACEFILE}
-
-    # Ugly "hack", but hey, it does what we want.
-    cp ${TRACEFILE} ${TRACEFILE_BDO}
+    local archiveroot targetpath TRACEFILE
 
     for archive in "${public_archives[@]}"; do
         archiveroot="$(get_archiveroot "${archive}")"
-        mirrordir="${archiveroot}/../mirror"
-        cd ${mirrordir}
+        targetpath="${mirrordir}/${archive}"
+        TRACEFILE="${archiveroot}/project/trace/ftp-master.debian.org"
+        mkdir -p "${archiveroot}/project/trace/"
+
+        log "Regenerating \"public\" mirror/${archive} hardlink fun"
+        DATE_SERIAL=$(date +"%Y%m%d01")
+        FILESOAPLUS1=$(awk '/serial/ { print $3+1 }' ${TRACEFILE} || echo ${DATE_SERIAL} )
+        if [[ ${DATE_SERIAL} -gt ${FILESOAPLUS1}  ]]; then
+            SERIAL="${DATE_SERIAL}"
+        else
+            SERIAL="${FILESOAPLUS1}"
+        fi
+        date -u > ${TRACEFILE}
+        echo "Using dak v1" >> ${TRACEFILE}
+        echo "Running on host: $(hostname -f)" >> ${TRACEFILE}
+        echo "Archive serial: ${SERIAL}" >> ${TRACEFILE}
+
+        mkdir -p ${targetpath}
+        cd ${targetpath}
         rsync -aH --link-dest ${archiveroot} --delete --delete-after --delete-excluded --exclude Packages.*.new --exclude Sources.*.new  --ignore-errors ${archiveroot}/. .
     done
 }
 
 function expire() {
     log "Expiring old database dumps..."
-    cd $base/backup
-    $scriptsdir/expire_dumps -d . -p -f "dump_*"
+    cd ${base}/backup
+    ${scriptsdir}/expire_dumps -d . -p -f "dump_*"
 }
 
 function transitionsclean() {
     log "Removing out of date transitions..."
-    cd $base
+    cd ${base}
     dak transitions -c -a
 }
 
 function dm() {
     log "Updating DM permissions page"
-    dak acl export-per-source dm >$exportdir/dm.txt
+    dak acl export-per-source dm >${exportdir}/dm.txt
 }
 
 function bts() {
@@ -441,66 +510,83 @@ function bts() {
     sudo -u dak-unpriv dak bts-categorize
 }
 
-function ddaccess() {
-    # Tell our dd accessible mirror to sync itself up. Including ftp dir.
-    log "Trigger dd accessible parts sync including ftp dir"
-    ${scriptsdir}/sync-dd dd-sync dd-sync1 dd-sync2 sync
-}
-
 function mirrorpush() {
-    log "Checking the public archive copy"
-    cd ${mirrordir}/dists
+    log "Checking the public archive copies..."
 
-    broken=0
-    for release in $(find . -name "InRelease"); do
-        echo "Processing: ${release}"
-        subdir=${release%/InRelease}
-        while read SHASUM SIZE NAME; do
-            if ! [ -f "${subdir}/${NAME}" ]; then
-               bname=$(basename ${NAME})
-                if [[ "${bname}" =~ ^(Packages|Sources|Contents-[a-zA-Z0-9-]+|Translation-[a-zA-Z_]+)$ ]]; then
-                    # We don't keep unpacked files, don't check for their existance.
-                    # We might want to go and check their unpacked shasum, but right now
-                    # I don't care. I believe it should be enough if all the packed shasums
-                    # match.
+    local archiveroot targetpath
+
+    for archive in "${public_archives[@]}"; do
+        log "... archive: ${archive}"
+        archiveroot="$(get_archiveroot "${archive}")"
+        targetpath="${mirrordir}/${archive}"
+        cd ${archiveroot}/dists
+
+        broken=0
+        for release in $(find . -name "InRelease"); do
+            echo "Processing: ${release}"
+            subdir=${release%/InRelease}
+            while read SHASUM SIZE NAME; do
+                if ! [[ -f ${subdir}/${NAME} ]]; then
+                    bname=$(basename ${NAME})
+                    if [[ "${bname}" =~ ^(Packages|Sources|Contents-[a-zA-Z0-9-]+|Translation-[a-zA-Z_]+|Components-(amd64|i386)\.yml|icons-(128x128|64x64)\.tar)$ ]]; then
+
+                        # We don't keep unpacked files, don't check for their existance.
+                        # We might want to go and check their unpacked shasum, but right now
+                        # I don't care. I believe it should be enough if all the packed shasums
+                        # match.
+                        continue
+                    fi
+                    broken=$(( broken + 1 ))
+                    echo "File ${subdir}/${NAME} is missing"
                     continue
                 fi
-                broken=$(( broken + 1 ))
-                echo "File ${subdir}/${NAME} is missing"
-                continue
-            fi
 
-           # We do have symlinks in the tree (see the contents files currently).
-           # So we use "readlink -f" to check the size of the target, as thats basically
-           # what gen-releases does
-            fsize=$(stat -c %s $(readlink -f "${subdir}/${NAME}"))
-            if [ ${fsize} -ne ${SIZE} ]; then
-                broken=$(( broken + 1 ))
-                echo "File ${subdir}/${NAME} has size ${fsize}, expected is ${SIZE}"
-                continue
-            fi
+                # We do have symlinks in the tree (see the contents files currently).
+                # So we use "readlink -f" to check the size of the target, as thats basically
+                # what gen-releases does
+                fsize=$(stat -c %s $(readlink -f "${subdir}/${NAME}"))
+                if [[ ${fsize} -ne ${SIZE} ]]; then
+                    broken=$(( broken + 1 ))
+                    echo "File ${subdir}/${NAME} has size ${fsize}, expected is ${SIZE}"
+                    continue
+                fi
 
-            fshasum=$(sha1sum $(readlink -f "${subdir}/${NAME}"))
-            fshasum=${fshasum%% *}
-            if [ "${fshasum}" != "${SHASUM}" ]; then
-                broken=$(( broken + 1 ))
-                echo "File ${subdir}/${NAME} has checksum ${fshasum}, expected is ${SHASUM}"
-                continue
-            fi
-        done < <(sed '1,/SHA1:/d' "${release}" | sed '/SHA256:/,$d')
+                fshasum=$(sha1sum $(readlink -f "${subdir}/${NAME}"))
+                fshasum=${fshasum%% *}
+                if [[ ${fshasum} != ${SHASUM} ]]; then
+                    broken=$(( broken + 1 ))
+                    echo "File ${subdir}/${NAME} has checksum ${fshasum}, expected is ${SHASUM}"
+                    continue
+                fi
+            done < <(sed '1,/SHA1:/d' "${release}" | sed '/SHA256:/,$d')
+        done
+
+        if [[ $broken -gt 0 ]]; then
+            log_error "Trouble with the public mirror for ${archive}, found ${broken} errors"
+            continue
+        else
+            log "Starting the mirrorpush for ${archive}"
+            case ${archive} in
+                ftp-master)
+                    fname="mirrorstart"
+                    pusharg=""
+                    ;;
+                debian-debug)
+                    pusharg="-a debug"
+                    ;;&
+                backports)
+                    pusharg="-a backports"
+                    ;;&
+                *)
+                    fname="mirrorstart.${archive}"
+                    ;;
+            esac
+            date -u > /srv/ftp.debian.org/web/${fname}
+            echo "Using dak v1" >> /srv/ftp.debian.org/web/${fname}
+            echo "Running on host $(hostname -f)" >> /srv/ftp.debian.org/web/${fname}
+            sudo -H -u archvsync /home/archvsync/runmirrors ${pusharg} > ~dak/runmirrors-${archive}.log 2>&1 &
+        fi
     done
-
-    if [ $broken -gt 0 ]; then
-        log_error "Trouble with the public mirror, found ${broken} errors"
-        return 21
-    fi
-
-    log "Starting the mirrorpush"
-    date -u > /srv/ftp.debian.org/web/mirrorstart
-    echo "Using dak v1" >> /srv/ftp.debian.org/web/mirrorstart
-    echo "Running on host $(hostname -f)" >> /srv/ftp.debian.org/web/mirrorstart
-    sudo -H -u archvsync /home/archvsync/runmirrors > ~dak/runmirrors.log 2>&1 &
-    sudo -H -u archvsync /home/archvsync/runmirrors -a backports > ~dak/runmirrorsbpo.log 2>&1 &
 }
 
 function mirrorpush-backports() {
@@ -532,59 +618,34 @@ function i18n2() {
 
 function stats() {
     log "Updating stats data"
-    cd $configdir
-    $scriptsdir/update-ftpstats $base/log/* > $base/misc/ftpstats.data
-    R --slave --vanilla < $base/misc/ftpstats.R
-    dak stats arch-space > $webdir/arch-space
-    dak stats pkg-nums > $webdir/pkg-nums
+    cd ${configdir}
+    ${scriptsdir}/update-ftpstats ${base}/log/* > ${base}/misc/ftpstats.data
+    R --slave --vanilla < ${base}/misc/ftpstats.R
+    dak stats arch-space > ${webdir}/arch-space
+    dak stats pkg-nums > ${webdir}/pkg-nums
 }
 
 function cleantransactions() {
     log "Cleanup transaction ids older than 3 months"
-    cd $base/backup/
+    cd ${base}/backup/
     find -maxdepth 1 -mindepth 1 -type f -name 'txid_*' -mtime +90 -delete
 }
 
 function logstats() {
-    $masterdir/tools/logs.py "$1"
+    ${masterdir}/tools/logs.py "$1"
 }
 
 # save timestamp when we start
 function savetimestamp() {
-	NOW=`date "+%Y.%m.%d-%H:%M:%S"`
-	echo ${NOW} > "${dbdir}/dinstallstart"
+    echo ${NOW} > "${dbdir}/dinstallstart"
 }
 
 function maillogfile() {
     cat "$LOGFILE" | mail -a "X-Debian: DAK" -s "Log for dinstall run of ${NOW}" -a "From: Debian FTP Masters <ftpmaster@ftp-master.debian.org>" cron@ftp-master.debian.org
 }
 
-function renamelogfile() {
-    if [ -f "${dbdir}/dinstallstart" ]; then
-        NOW=$(cat "${dbdir}/dinstallstart")
-#        maillogfile
-        mv "$LOGFILE" "$logdir/dinstall_${NOW}.log"
-        logstats "$logdir/dinstall_${NOW}.log"
-        bzip2 -9 "$logdir/dinstall_${NOW}.log"
-    else
-        error "Problem, I don't know when dinstall started, unable to do log statistics."
-        NOW=`date "+%Y.%m.%d-%H:%M:%S"`
-#        maillogfile
-        mv "$LOGFILE" "$logdir/dinstall_${NOW}.log"
-        bzip2 -9 "$logdir/dinstall_${NOW}.log"
-    fi
-}
-
 function testingsourcelist() {
     dak ls -s testing -f heidi -r .| egrep 'source$' > ${webdir}/testing.list
-}
-
-# do a last run of process-unchecked before dinstall is on.
-function process_unchecked() {
-    log "Processing the unchecked queue"
-    UNCHECKED_WITHOUT_LOCK="-p"
-    do_unchecked
-    sync_debbugs
 }
 
 # Function to update a "statefile" telling people what we are doing
@@ -604,54 +665,55 @@ EOF
 
 # extract changelogs and stuff
 function changelogs() {
-    if lockfile -r3 $LOCK_CHANGELOG; then
+    if lockfile -r3 ${LOCK_CHANGELOG}; then
+        trap remove_changelog_lock EXIT TERM HUP INT QUIT
         log "Extracting changelogs"
         dak make-changelog -e -a ftp-master
-        [ -f ${exportdir}/changelogs/filelist.yaml ] && xz -f ${exportdir}/changelogs/filelist.yaml
+        [[ -f ${exportdir}/changelogs/filelist.yaml ]] && xz -f ${exportdir}/changelogs/filelist.yaml
         mkdir -p ${exportpublic}/changelogs
         cd ${exportpublic}/changelogs
         rsync -aHW --delete --delete-after --ignore-errors ${exportdir}/changelogs/. .
         sudo -H -u staticsync /usr/local/bin/static-update-component metadata.ftp-master.debian.org >/dev/null 2>&1 &
 
         dak make-changelog -e -a backports
-        [ -f /srv/backports-master.debian.org/export/changelogs/filelist.yaml ] && xz -f /srv/backports-master.debian.org/export/changelogs/filelist.yaml
+        [[ -f /srv/backports-master.debian.org/export/changelogs/filelist.yaml  ]] && xz -f /srv/backports-master.debian.org/export/changelogs/filelist.yaml
         mkdir -p /srv/backports-master.debian.org/rsync/export/changelogs
         cd /srv/backports-master.debian.org/rsync/export/changelogs
         rsync -aHW --delete --delete-after --ignore-errors /srv/backports-master.debian.org/export/changelogs/. .
         remove_changelog_lock
-        trap remove_changelog_lock EXIT TERM HUP INT QUIT
     fi
 }
 
-function gitpdiff() {
-    # Might be that we want to change this to have more than one git repository.
-    # Advantage of one is that we do not need much space in terms of storage in git itself,
-    # git gc is pretty good on our input.
-    # But it might be faster. Well, lets test.
-    log "Adjusting the git tree for pdiffs"
-    cd ${dbdir}/git/git/
+# Generate a list of extra mirror files, sha256sum em and sign that
+function signotherfiles() {
+    log "Signing extra mirror files"
 
-    # The regex needs the architectures seperated with \|
-    garchs=$(dak admin a list|sed -e ':q;N;s/\n/\\|/g;t q')
+    local archiveroot
 
-    # First, get all the files we want to work on. ../dists/ is a symlink to the real dists/ we
-    # want to work with.
-    # Also, we only want contents, packages and sources.
-    for file in $(find ../dists/ -regex ".*/\(Contents-\($archs\)\|\(Packages\|Sources\)\).gz"); do
-        log "${file}"
-        basen=${file%%.gz};
-        basen=${basen##../};
-        dir=${basen%/*};
-        mkdir -p $dir;
-        zcat $file > $basen;
+    for archive in "${public_archives[@]}"; do
+        log "... archive: ${archive}"
+        archiveroot="$(get_archiveroot "${archive}")"
+        local TMPLO=$( gettempfile )
+
+        cd ${archiveroot}
+        rm -f extrafiles
+        sha256sum $(find * -type f | egrep -v '(pool|i18n|dep11|source)/|Contents-.*\.(gz|diff)|installer|binary-|(In)?Release(.gpg)?|\.changes' | sort) > ${TMPLO}
+        gpg --no-options --batch --no-tty --armour --personal-digest-preferences=SHA256 --secret-keyring /srv/ftp-master.debian.org/s3kr1t/dot-gnupg/secring.gpg --keyring /srv/ftp-master.debian.org/s3kr1t/dot-gnupg/pubring.gpg --no-options --batch --no-tty --armour --default-key 473041FA --clearsign --output ${archiveroot}/extrafiles ${TMPLO}
+        rm -f ${TMPLO}
     done
+}
 
-    # Second, add all there is into git
-    cd dists
-    git add .
-    # Maybe we want to make this the same for tag and commit? But well, shouldn't matter
-    COMD=$(date  -Is)
-    TAGD=$(date +%Y-%m-%d-%H-%M)
-    git commit -m "Commit of ${COMD}"
-    git tag "${TAGD}"
- }
+function startup() {
+    touch "${DINSTALLSTART}"
+    ts "startup"
+    lockfile -l 3600 "${LOCK_DAILY}"
+    trap onerror ERR
+    touch "${LOCK_BRITNEY}"
+    TMPFILES="${TMPFILES} ${LOCK_DAILY} ${LOCK_BRITNEY}"
+}
+
+function postcronscript() {
+    logstats ${LOGFILE}
+    state "all done"
+    touch "${DINSTALLEND}"
+}

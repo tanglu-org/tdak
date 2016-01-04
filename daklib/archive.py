@@ -780,18 +780,25 @@ class ArchiveUpload(object):
 
     def _check_new_binary_overrides(self, suite):
         new = False
-
-        binaries = self.changes.binaries
         source = self.changes.source
+
         if source is not None and not source.package_list.fallback:
             packages = source.package_list.packages_for_suite(suite)
             binaries = [ entry for entry in packages ]
-
-        for b in binaries:
-            override = self._binary_override(suite, b)
-            if override is None:
-                self.warnings.append('binary:{0} is NEW.'.format(b.name))
-                new = True
+            for b in binaries:
+                override = self._binary_override(suite, b)
+                if override is None:
+                    self.warnings.append('binary:{0} is NEW.'.format(b.name))
+                    new = True
+        else:
+            binaries = self.changes.binaries
+            for b in binaries:
+                if utils.is_in_debug_section(b.control) and suite.debug_suite is not None:
+                    continue
+                override = self._binary_override(suite, b)
+                if override is None:
+                    self.warnings.append('binary:{0} is NEW.'.format(b.name))
+                    new = True
 
         return new
 
@@ -1173,7 +1180,7 @@ class ArchiveUpload(object):
                 continue
 
             script = rule['Script']
-            retcode = daklib.daksubprocess.call([script, os.path.join(self.directory, f.filename), control['Version'], arch, os.path.join(self.directory, self.changes.filename)], shell=False)
+            retcode = daklib.daksubprocess.call([script, os.path.join(self.directory, f.filename), control['Version'], arch, os.path.join(self.directory, self.changes.filename), suite.suite_name], shell=False)
             if retcode != 0:
                 print "W: error processing {0}.".format(f.filename)
                 remaining.append(f)
@@ -1275,7 +1282,7 @@ class ArchiveUpload(object):
             source_suites = self.session.query(Suite).filter(Suite.suite_id.in_(source_suite_ids)).subquery()
 
             source_component_func = lambda source: self._source_override(overridesuite, source).component
-            binary_component_func = lambda binary: self._binary_component(overridesuite, binary)
+            binary_component_func = lambda binary: self._binary_component(overridesuite, binary, only_overrides=False)
 
             (db_source, db_binaries) = self._install_to_suite(redirected_suite, source_component_func, binary_component_func, source_suites=source_suites, extra_source_archives=[suite.archive])
 

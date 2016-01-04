@@ -350,6 +350,7 @@ def remove(session, reason, suites, removals,
     binaries = []
     whitelists = []
     versions = []
+    newest_source = ''
     suite_ids_list = []
     suites_list = utils.join_with_commas_and(suites)
     cnf = utils.get_conf()
@@ -400,6 +401,8 @@ def remove(session, reason, suites, removals,
         for version in versions:
             d[package][version].sort(utils.arch_compare_sw)
             summary += "%10s | %10s | %s\n" % (package, version, ", ".join(d[package][version]))
+            if apt_pkg.version_compare(version, newest_source) > 0:
+                newest_source = version
 
     for package in summary.split("\n"):
         for row in package.split("\n"):
@@ -527,13 +530,19 @@ def remove(session, reason, suites, removals,
             Subst_close_other = Subst_common
             bcc = []
             wnpp = utils.parse_wnpp_bug_file()
-            versions = list(set([re_bin_only_nmu.sub('', v) for v in versions]))
-            if len(versions) == 1:
-                Subst_close_other["__VERSION__"] = versions[0]
+            newest_source = re_bin_only_nmu.sub('', newest_source)
+            if len(set(s.split("_", 1)[0] for s in sources)) == 1:
+                source_pkg = source.split("_", 1)[0]
             else:
                 logfile.write("=========================================================================\n")
                 logfile822.write("\n")
-                raise ValueError("Closing bugs with multiple package versions is not supported.  Do it yourself.")
+                raise ValueError("Closing bugs for multiple source packages is not supported.  Please do it yourself.")
+            if newest_source != '':
+                Subst_close_other["__VERSION__"] = newest_source
+            else:
+                logfile.write("=========================================================================\n")
+                logfile822.write("\n")
+                raise ValueError("No versions can be found. Close bugs yourself.")
             if bcc:
                 Subst_close_other["__BCC__"] = "Bcc: " + ", ".join(bcc)
             else:
@@ -541,12 +550,6 @@ def remove(session, reason, suites, removals,
             # at this point, I just assume, that the first closed bug gives
             # some useful information on why the package got removed
             Subst_close_other["__BUG_NUMBER__"] = done_bugs[0]
-            if len(sources) == 1:
-                source_pkg = source.split("_", 1)[0]
-            else:
-                logfile.write("=========================================================================\n")
-                logfile822.write("\n")
-                raise ValueError("Closing bugs for multiple source packages is not supported.  Please do it yourself.")
             Subst_close_other["__BUG_NUMBER_ALSO__"] = ""
             Subst_close_other["__SOURCE__"] = source_pkg
             merged_bugs = set()

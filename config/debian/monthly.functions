@@ -1,0 +1,38 @@
+# -*- mode:sh -*-
+
+function rotatelog() {
+    cd ${base}/log
+    touch ${DATE}
+    ln -sf ${DATE} current
+    chmod g+w ${DATE}
+    chown dak:ftpteam ${DATE}
+    xz -9 ${OLDDATE}
+}
+
+function rotatequeued() {
+    cd /srv/upload.debian.org/queued
+    sudo -u dak-unpriv /srv/upload.debian.org/queued/debianqueued -k || true
+    mv run/log log.${OLDDATE}
+    sudo -u dak-unpriv touch run/log
+    xz -9 log.${OLDDATE}
+    sudo -u dak-unpriv /srv/upload.debian.org/queued/debianqueued 2>/dev/null
+}
+
+function archivequeuedone() {
+    log "Archiving queue/done files of ${DONEYEAR}-${DONEMONTH}"
+    cd ${queuedir}/done/${DONEYEAR}
+    tar --create --xz --remove-files --file ${DONEMONTH}.tar.xz ${DONEMONTH}
+}
+
+function rotatereports() {
+    # Do not rotate while it might receive data
+    if lockfile -r -1 ${LOCK_UNCHECKED} 2> /dev/null; then
+        TMPFILES="${TMPFILES} ${LOCK_UNCHECKED}"
+        for dir in ${queuedir}/{.,p-u-new,o-p-u-new} /srv/backports-master.debian.org/queue/policy; do
+            cd ${dir}
+            mv REPORT REPORT.${OLDDATE}
+            xz -9 REPORT.${OLDDATE}
+            touch REPORT
+        done
+    fi
+}

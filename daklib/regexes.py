@@ -102,7 +102,7 @@ re_parse_lintian = re.compile(r"^(?P<level>W|E|O): (?P<package>.*?): (?P<tag>[^ 
 
 # in generate-releases
 re_gensubrelease = re.compile (r".*/(binary-[0-9a-z-]+|source)$")
-re_includeinrelease = re.compile (r"(Translation-[a-zA-Z_]+\.(?:bz2|xz)|Contents-[0-9a-z-]+.gz|Index|Packages(.gz|.bz2|.xz)?|Sources(.gz|.bz2|.xz)?|MD5SUMS|SHA256SUMS|Release)$")
+re_includeinrelease = re.compile (r"(Translation-[a-zA-Z_]+\.(?:bz2|xz)|Contents-[0-9a-z-]+.gz|Index|Packages(.gz|.bz2|.xz)?|Sources(.gz|.bz2|.xz)?|Components-[0-9a-z-]+.yml(.gz|.xz)|icons-[0-9x-]+.tar(.gz|.xz)|MD5SUMS|SHA256SUMS|Release)$")
 
 # in generate_index_diffs
 re_includeinpdiff = re.compile(r"(Translation-[a-zA-Z_]+\.(?:bz2|xz))")
@@ -140,6 +140,10 @@ re_file_source = re.compile(_re_file_prefix + r'(?:(?:\.orig(?:-[a-zA-Z0-9-]+)?|
 # Match upstream tarball
 # Groups: package, version
 re_file_orig = re.compile(_re_file_prefix + r'\.orig(?:-[a-zA-Z0-9-]+)?(?:\.tar\.(?:bz2|gz|xz)|\.asc)')
+
+# Match buildinfo file
+# Groups: package, version, suffix
+re_file_buildinfo = re.compile(_re_file_prefix + r'_(?P<suffix>[a-zA-Z0-9+-]+)\.buildinfo$')
 
 ######################################################################
 # Patterns matching fields                                           #

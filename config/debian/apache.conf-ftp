@@ -14,6 +14,7 @@ Use common-debian-service-https-redirect * ftp-master.debian.org
   Redirect permanent /oldstable-proposed-updates.html https://release.debian.org/proposed-updates/oldstable.html
   Redirect permanent /testing/hints/transitions.yaml https://ftp-master.debian.org/transitions.yaml
   Alias /users/ /srv/ftp.debian.org/web-users/
+  Alias /static/lintian.tags /srv/ftp-master.debian.org/dak/config/debian/lintian.tags
 
   <Directory /srv/ftp.debian.org/web-users>
     Require all granted
@@ -27,6 +28,13 @@ Use common-debian-service-https-redirect * ftp-master.debian.org
     Options MultiViews Indexes SymLinksIfOwnerMatch
   </Directory>
 
+  <Directory /srv/ftp-master.debian.org/dak/config/debian>
+    <Files lintian.tags>
+      Require all granted
+    </Files>
+  </Directory>
+
   RewriteEngine On
   RewriteRule ^/~(.+) /users/$1 [R=permanent,L]
+  RewriteRule ^/testing/(.*) https://release.debian.org/britney/$1 [R=permanent,L]
 </VirtualHost>

@@ -1,0 +1,234 @@
+#!/bin/bash
+# No way I try to deal with a crippled sh just for POSIX foo.
+
+# Copyright (C) 2009-2016 Joerg Jaspert <joerg@debian.org>
+#
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License as
+# published by the Free Software Foundation; version 2.
+#
+# This program is distributed in the hope that it will be useful, but
+# WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+# General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+
+# Homer: Are you saying you're never going to eat any animal again? What
+#        about bacon?
+# Lisa: No.
+# Homer: Ham?
+# Lisa: No.
+# Homer: Pork chops?
+# Lisa: Dad, those all come from the same animal.
+# Homer: Heh heh heh. Ooh, yeah, right, Lisa. A wonderful, magical animal.
+
+# exit on errors
+set -e
+# A pipeline's return status is the value of the last (rightmost)
+# command to exit with a non-zero status, or zero if all commands exit
+# successfully.
+set -o pipefail
+# make sure to only use defined variables
+set -u
+# ERR traps should be inherited from functions too. (And command
+# substitutions and subshells and whatnot, but for us the functions is
+# the important part here)
+set -E
+
+# If the extglob shell option is enabled using the shopt builtin,
+# several extended pattern matching operators are recognized. We use
+# it for the POSSIBLEARGS and the first case ${ARGS} matching.
+shopt -s extglob
+
+# And use one locale, no matter what the caller has set
+export LANG=C.UTF-8
+export LC_ALL=C.UTF-8
+
+# If run from crontab, CONFIGDIR will point to the correct dir
+# where we find the vars file
+configdir=${configdir:-"/srv/ftp-master.debian.org/dak/config/debian"}
+# import the general variable set. (This will overwrite configdir, but
+# it is expected to have the same value)
+export SCRIPTVARS=${configdir}/vars
+. $SCRIPTVARS
+
+# One arg please
+declare -lr ARG=${1:-"meh"}
+
+# program name is the (lower cased) first argument.
+PROGRAM="${ARG}"
+
+# set DEBUG if you want to see a little more logs (needs to be used more)
+DEBUG=${DEBUG:-0}
+
+# Check if the argument is a known one. If so, lock us so that only
+# one copy of the type of cronscript runs. The $type.tasks file is
+# mandantory, so use that for locking.
+case ${ARG} in
+    ${POSSIBLEARGS})
+        # Only one of me should ever run.
+        FLOCKER=${FLOCKER:-""}
+        [  "${FLOCKER}"  != "${configdir}/${PROGRAM}.tasks" ] && exec env FLOCKER="${configdir}/${PROGRAM}.tasks" flock -E 0 -en "${configdir}/${PROGRAM}.tasks" "$0" "$@" || :
+        ;;
+    *)
+        cat - <<EOF
+This is the cronscript. It needs an argument or it won't do anything
+for you.
+
+Currently accepted Arguments: ${POSSIBLEARGS}
+
+To see what they do, you want to look at the files
+\$ARGUMENT.{tasks,functions,variables} in ${configdir}.
+
+EOF
+        exit 0
+        ;;
+esac
+
+(
+    LOCKFREE=0
+    flock --shared --nonblock 42 || LOCKFREE=1
+
+    # Did we get the lock? (It's shared, so usually we will. But DSA
+    # can take an exclusive one in preparation for a reboot)
+    if [[ ${LOCKFREE} -gt 0 ]]; then
+        echo "Couldn't get (shared) reboot lock"
+        exit 1
+    fi
+
+    # common functions are "outsourced"
+    . "${configdir}/common"
+
+    # Timestamp when we started
+    NOW=$(date "+%Y.%m.%d-%H:%M:%S")
+
+    # Which list of tasks should we run?
+    declare -r TASKLIST="${configdir}/${PROGRAM}.tasks"
+
+    # A logfile for every cron script
+    LOGFILE="${logdir}/${PROGRAM}_${NOW}.log"
+
+    # Each "cronscript" may have a variables and a functions file
+    # that we source
+    for what in variables functions; do
+        if [[ -f ${configdir}/${PROGRAM}.${what} ]]; then
+            . ${configdir}/${PROGRAM}.${what}
+        fi
+    done
+
+    # Get rid of tempfiles at the end
+    trap cleanup EXIT TERM HUP INT QUIT
+
+    # If there is a precronscript function, we run it.
+    prefunc=$(type -t precronscript || echo "")
+    if [[ -n ${prefunc} ]] && [[ ${prefunc} = function ]]; then
+        precronscript
+    fi
+
+    # An easy access by name for the current log
+    ln -sf ${LOGFILE} ${logdir}/${PROGRAM}
+
+    # And from here, all output to the log please
+    exec >> "$LOGFILE" 2>&1
+
+    # The stage function uses this directory
+    # This amends the stagedir variable from "vars"
+    stagedir="${stagedir}/${PROGRAM}"
+    # Ensure the dir exists
+    mkdir -p ${stagedir}
+
+    # This loop simply wants to be fed by a list of values (see below)
+    # made out of 5 columns.
+    # The first four are the array values for the stage function, the
+    # fifth tells us if we should background the stage call.
+    #
+    #  - FUNC - the function name to call
+    #  - ARGS - Possible arguments to hand to the function. Can be the empty string
+    #  - TIME - The timestamp name. Can be the empty string
+    #  - ERR  - if this is the string false, then the call will be surrounded by
+    #           set +e ... set -e calls, so errors in the function do not exit
+    #           dinstall. Can be the empty string, meaning true.
+    #  - BG   - Background the function stage?
+    #
+    # ATTENTION: Spaces in arguments or timestamp names need to be escaped by \
+    #
+    # NOTE 1: There are two special values for the first column (FUNC).
+    #         STATE   - do not call stage function, call the state
+    #                   function to update the public statefile "where is dinstall"
+    #         NOSTAGE - do not call stage function, call the command directly.
+    #
+    # Note 2: If you want to hand an empty value to the stage function,
+    #         use the word "none" in the list below.
+    while read FUNC ARGS TIME ERR BACKGROUND; do
+        debug "FUNC: $FUNC ARGS: $ARGS TIME: $TIME ERR: $ERR BG: $BACKGROUND"
+
+        # Empty values in the value list are the string "none" (or the
+        # while read loop won't work). Here we ensure that variables that
+        # can be empty, are empty if the string none is set for them.
+        for var in ARGS TIME; do
+            if [[ ${!var} == none ]]; then
+                typeset ${var}=''
+            fi
+        done
+
+        # ERR/BACKGROUND are boolean, check that they are.
+        for var in ERR BACKGROUND; do
+            if [[ ${!var} != false ]] && [[ ${!var} != true ]]; then
+                error "Illegal value ${!var} for ${var} (should be true or false), line for function ${FUNC}"
+            fi
+        done
+
+        case ${FUNC} in
+            STATE)
+                state ${ARGS}
+                ;;
+            NOSTAGE)
+                ${ARGS}
+                ;;
+            *)
+                GO=(
+                    FUNC=${FUNC}
+                    TIME=${TIME}
+                    ARGS=${ARGS}
+                    ERR=${ERR}
+                )
+                if [[ ${BACKGROUND} == true ]]; then
+                    stage $GO &
+                else
+                    stage $GO
+                fi
+                ;;
+        esac
+    done < <(grep -v '^#' ${TASKLIST} )
+
+    # we need to wait for the background processes before the end of the cron script
+    wait
+
+    # Common to all cron scripts
+    log "Cron script successful, all done"
+    # Redirect output to another file, as we want to compress our logfile
+    # and ensure its no longer used
+    exec > "$logdir/after${PROGRAM}.log" 2>&1
+
+    # If there is a postcronscript function, we run it.
+    postfunc=$(type -t postcronscript || echo "")
+    if [[ -n ${postfunc} ]] && [[ ${postfunc} = function ]]; then
+        postcronscript
+    fi
+
+    # Now, at the very (successful) end of this run, make sure we remove
+    # our stage files, so the next dinstall run will do it all again.
+    rm -f ${stagedir}/*
+    bzip2 -9 ${LOGFILE}
+
+    # Logfile should be gone, remove the symlink
+    [[ -L ${logdir}/${PROGRAM} ]] && [[ ! -f ${logdir}/${PROGRAM} ]] && rm -f ${logdir}/${PROGRAM} || log "Logfile still exists or symlink gone already? Something fishy going on"
+
+    # FIXME: Mail the log when its non-empty
+    [[ -s "${logdir}/after${PROGRAM}.log" ]] || rm "${logdir}/after${PROGRAM}.log"
+
+# And end the reboot-locked part
+) 42</var/run/reboot-lock
