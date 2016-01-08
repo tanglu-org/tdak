@@ -197,7 +197,7 @@ def comment_accept(upload, srcqueue, comments, transaction):
 
             # build queues may miss the source package if this is a
             # binary-only upload.
-            if suite != upload.target_suite:
+            if copy_to_suite != upload.target_suite:
                 transaction.copy_source(
                     db_binary.source,
                     copy_to_suite,
