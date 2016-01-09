@@ -44,6 +44,7 @@ import email as modemail
 import subprocess
 import ldap
 import errno
+import csv
 
 import daklib.config as config
 import daklib.daksubprocess
@@ -457,7 +458,9 @@ def send_mail (message, filename="", whitelists=None):
             value = message_raw.get(field, None)
             if value != None:
                 match = [];
-                for item in value.split(","):
+
+                # we (ab)use csv to parse quoted commas correctly here and not split them.
+                for item in list(csv.reader([value], skipinitialspace=True))[0]:
                     (rfc822_maint, rfc2047_maint, name, email) = fix_maintainer(item.strip())
                     mail_whitelisted = 0
                     for wr in whitelist:
@@ -1094,7 +1097,7 @@ def mail_addresses_for_upload(maintainer, changed_by, fingerprint):
     if len(fpr_addresses) > 0 and fix_maintainer(changed_by)[3] not in fpr_addresses and fix_maintainer(maintainer)[3] not in fpr_addresses:
         addresses.append(fpr_addresses[0])
 
-    encoded_addresses = [ fix_maintainer(e)[1] for e in addresses ]
+    encoded_addresses = [ fix_maintainer(e)[3] for e in addresses ]
     return encoded_addresses
 
 ################################################################################
