@@ -778,7 +778,7 @@ class ArchiveUpload(object):
         suites = session.query(Suite).filter(Suite.suite_name.in_(suite_names))
         return suites
 
-    def _check_new_binary_overrides(self, suite):
+    def _check_new_binary_overrides(self, suite, target_suite=None):
         new = False
         source = self.changes.source
 
@@ -793,7 +793,7 @@ class ArchiveUpload(object):
         else:
             binaries = self.changes.binaries
             for b in binaries:
-                if utils.is_in_debug_section(b.control) and suite.debug_suite is not None:
+                if utils.is_in_debug_section(b.control) and target_suite and target_suite.debug_suite is not None:
                     continue
                 override = self._binary_override(suite, b)
                 if override is None:
@@ -802,7 +802,7 @@ class ArchiveUpload(object):
 
         return new
 
-    def _check_new(self, suite):
+    def _check_new(self, suite, target_suite=None):
         """Check if upload is NEW
 
         An upload is NEW if it has binary or source packages that do not have
@@ -816,7 +816,7 @@ class ArchiveUpload(object):
         new = False
 
         # Check for missing overrides
-        if self._check_new_binary_overrides(suite):
+        if self._check_new_binary_overrides(suite, target_suite):
             new = True
         if self.changes.source is not None:
             override = self._source_override(suite, self.changes.source)
@@ -851,7 +851,7 @@ class ArchiveUpload(object):
             overridesuite = suite
             if suite.overridesuite is not None:
                 overridesuite = session.query(Suite).filter_by(suite_name=suite.overridesuite).one()
-            if self._check_new(overridesuite):
+            if self._check_new(overridesuite, suite):
                 self.new = True
             final_suites.add(suite)
 
