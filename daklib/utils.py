@@ -1061,7 +1061,7 @@ def get_packages_from_ftp(root, suite, component, architecture):
         if (result != 0):
             fubar("Gunzip invocation failed!\n%s\n" % (output), result)
     packages = open_file(temp_file)
-    Packages = apt_pkg.parse_tag_file(packages)
+    Packages = apt_pkg.TagFile(packages)
     os.unlink(temp_file)
     return Packages
 
