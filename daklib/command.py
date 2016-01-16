@@ -97,24 +97,6 @@ class CommandFile(object):
         finally:
             session.rollback()
 
-    def _has_only_sync_actions(self, sections):
-        only_sync = True
-        try:
-            while True:
-                sections.next()
-                section = sections.section
-
-                action = section.get('Action', None)
-                if action != "sync":
-                    only_sync = False
-        except StopIteration:
-            pass
-        # reset
-        sections.jump(0)
-        sections.next()
-
-        return only_sync
-
     def _notify_uploader(self):
         cnf = Config()
 
@@ -186,9 +168,7 @@ class CommandFile(object):
                 raise CommandError('No Archive field in first section.')
 
             # TODO: send mail when we detected a replay.
-            # sync actions can happen multiple times, so we won't keep a history
-            if not self._has_only_sync_actions(sections):
-                self._check_replay(signed_file, session)
+            self._check_replay(signed_file, session)
 
             self._evaluate_sections(sections, session)
             self.result.append('')
@@ -361,7 +341,7 @@ class CommandFile(object):
             packages = [packages_str]
 
         # we always sync to the staging suite of Tanglu
-        sync_cmd = ["sync-debian-package", "-i", suite, "staging", component]
+        sync_cmd = ["synchrotron", "-i", suite, "staging", component]
         # add to-be-synced packages to the parameter list
         sync_cmd.extend(packages)
 
