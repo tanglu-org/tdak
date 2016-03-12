@@ -69,6 +69,7 @@ function do_buildd () {
 
         # tell Debile that we have new stuff
         debile_unblock_trigger
+        dak manage-build-queues -a
     fi
 }
 
