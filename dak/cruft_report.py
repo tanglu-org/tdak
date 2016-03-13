@@ -617,7 +617,7 @@ def main ():
 
     # Checks based on the Packages files
     check_components = components[:]
-    if suite_name != "staging":
+    if suite_name != "experimental":
         check_components.append('main/debian-installer');
 
     for component in check_components:
