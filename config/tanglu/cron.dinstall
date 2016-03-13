@@ -197,22 +197,6 @@ lockfile "$LOCK_NEW"
 trap remove_all_locks EXIT TERM HUP INT QUIT
 
 GO=(
-    FUNC="punew"
-    TIME="p-u-new"
-    ARGS="stable-new"
-    ERR="false"
-)
-stage $GO
-
-GO=(
-    FUNC="opunew"
-    TIME="o-p-u-new"
-    ARGS="oldstable-new"
-    ERR="false"
-)
-stage $GO
-
-GO=(
     FUNC="cruft"
     TIME="cruft"
     ARGS=""
@@ -421,14 +405,6 @@ GO=(
     ERR=""
 )
 stage $GO
-
-GO=(
-    FUNC="aptftpcleanup"
-    TIME="apt-ftparchive cleanup"
-    ARGS=""
-    ERR="false"
-)
-#stage $GO
 
 # we need to wait for the background processes before the end of dinstall
 wait

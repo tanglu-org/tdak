@@ -29,42 +29,6 @@ function debile_unblock_trigger() {
     sudo -u debile debile-tanglu-integration --import --unblock $suites_incoming
 }
 
-# Process (oldstable)-proposed-updates "NEW" queue
-function punew_do() {
-    local queue="$1"
-    local qdir="$2"
-    date -u -R >> REPORT
-    #dak process-policy "${queue}" | tee -a REPORT | mail -a "X-Debian: DAK" -e -s "NEW changes in ${queue}" -a "From: Tanglu FTP Masters <ftpmasters@ftp-master.tanglu.org>" debian-release@lists.debian.org
-    #echo >> REPORT
-
-    #dak generate-packages-sources2 -s "${queue}"
-
-    #STAMP=${STAMP:-$(date "+%Y%m%d%H%M")}
-
-    #local exportdir="${queuedir}${qdir}/tree/${STAMP}"
-    #local targetdir="${queuedir}${qdir}/export"
-    #dak export -q "${queue}" -d "${exportdir}" --all
-    #ln -sfT ${exportdir} ${targetdir}
-    #find ${queuedir}${qdir}/tree -mindepth 1 -maxdepth 1 -not -name "${STAMP}" -type d -print0 | xargs --no-run-if-empty -0 rm -rf
-}
-
-# These versions used in dinstall
-function punew() {
-    if [ "${PROGRAM}" = "dinstall" ]; then
-        log "Doing automated p-u-new processing"
-    fi
-    cd "${queuedir}/p-u-new"
-    punew_do "$1" "p-u-new"
-}
-
-function opunew() {
-    if [ "${PROGRAM}" = "dinstall" ]; then
-        log "Doing automated o-p-u-new processing"
-    fi
-    cd "${queuedir}/o-p-u-new"
-    punew_do "$1" "o-p-u-new"
-}
-
 # Do the unchecked processing, in case we have files.
 function do_unchecked () {
     cd $unchecked

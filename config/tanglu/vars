@@ -35,6 +35,8 @@ exportpublic=$public/rsync/export
 ftpgroup=debadmin
 
 public_archives=(janus tanglu-debug)
+devel_suite="dasyatis"
+staging_suite="staging"
 suites_incoming="staging bartholomea-updates chromodoris-updates"
 
 TMPDIR=${base}/tmp

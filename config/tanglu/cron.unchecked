@@ -103,9 +103,6 @@ trap cleanup 0
  #LOGFILE="$logdir/unchecked_${NOW}.log"
  #exec >> "$LOGFILE" 2>&1
 
-# Process policy queues
-punew staging-new
-
 # Finally deal with unchecked
 do_unchecked
 do_debile_incoming
@@ -114,9 +111,6 @@ if [ ! -z "$changes" ]; then
     do_dists
     do_buildd
 fi
-
-dak contents -l 10000 scan-binary
-dak contents -l 1000 scan-source
 
 # cleanup incoming upload dir
 [ "$(ls -A /pub/ftp/incoming)" ] && find /pub/ftp/incoming/ -mtime +4 -exec rm {} \;
