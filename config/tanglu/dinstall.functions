@@ -53,6 +53,7 @@ function dominate() {
     log "Removing obsolete source and binary associations"
     dak dominate
     dak manage-debug-suites staging-debug dasyatis-debug
+    dak manage-build-queues -a
 }
 
 function fingerprints() {

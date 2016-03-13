@@ -69,17 +69,13 @@ function do_buildd () {
 
         # tell Debile that we have new stuff
         debile_unblock_trigger
-        dak manage-build-queues -a
     fi
 }
 
 function do_dists () {
     cd $configdir
-    dak generate-packages-sources2 -a janus -s staging > /dev/null
+    dak generate-packages-sources2 -a janus -s $queues_incoming > /dev/null
     release
-    #! sync # just for testing
-    # sync the public ftp mirror
-    mirror
 }
 
 function do_debile_incoming () {
@@ -108,15 +104,13 @@ trap cleanup 0
  #exec >> "$LOGFILE" 2>&1
 
 # Process policy queues
-punew stable-new
-opunew oldstable-new
+punew staging-new
 
 # Finally deal with unchecked
 do_unchecked
 do_debile_incoming
 
 if [ ! -z "$changes" ]; then
-    #sync_debbugs
     do_dists
     do_buildd
 fi
