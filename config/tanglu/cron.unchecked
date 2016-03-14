@@ -74,8 +74,8 @@ function do_buildd () {
 
 function do_dists () {
     cd $configdir
-    dak generate-packages-sources2 -a janus -s $queues_incoming > /dev/null
-    release
+    dak generate-packages-sources2 -s $queues_incoming > /dev/null
+    dak generate-releases -s $queues_incoming
 }
 
 function do_debile_incoming () {
