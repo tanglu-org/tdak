@@ -134,6 +134,13 @@ function mirror() {
     rsync -aqH --delete ${archiveroot}/dists ./tanglu/
 }
 
+function mirror_build_queues() {
+    cd $public_buildqdir
+    # sync the dists dir without hardlinks
+    # the pool is symlinked already
+    rsync -aqH --delete $buildqdir/dists .
+}
+
 function release() {
     log "Generating Release files"
     for archive in "${public_archives[@]}"; do

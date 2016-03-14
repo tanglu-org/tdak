@@ -31,6 +31,8 @@ incoming=$base/incoming
 newstage=$queuedir/newstage
 exportdir=$base/export
 exportpublic=$public/rsync/export
+buildqdir=$queuedir/build
+public_buildqdir=/srv/buildd.tanglu.org/build-queues
 
 ftpgroup=debadmin
 
