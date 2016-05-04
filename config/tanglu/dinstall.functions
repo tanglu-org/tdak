@@ -121,8 +121,18 @@ function pdiff() {
     dak generate-index-diffs
 }
 
+function mirror_build_queues() {
+    cd $public_buildqdir
+    # sync the dists dir without hardlinks
+    # the pool is symlinked already
+    rsync -aqH --delete $buildqdir/dists .
+}
+
 function mirror() {
     local archiveroot
+
+    # always mirror build queues first
+    mirror_build_queues
 
     archiveroot="$(get_archiveroot "janus")"
     cd $public_ftpdir
@@ -132,13 +142,6 @@ function mirror() {
     # now sync the dists dir without hardlinks
     # (this is done to prevent archive issues while the indices are rebuilt)
     rsync -aqH --delete ${archiveroot}/dists ./tanglu/
-}
-
-function mirror_build_queues() {
-    cd $public_buildqdir
-    # sync the dists dir without hardlinks
-    # the pool is symlinked already
-    rsync -aqH --delete $buildqdir/dists .
 }
 
 function release() {
