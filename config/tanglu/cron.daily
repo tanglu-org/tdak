@@ -16,6 +16,7 @@ exec >> "$LOGFILE" 2>&1
 
 ################################################################################
 # Clean out old packages
+dak auto-decruft -s $staging_suite
 dak clean-suites -m 10000
 dak clean-queues
 
@@ -24,7 +25,7 @@ dak queue-report -d new,byhand | mail -e -s "Tanglu NEW and BYHAND on $(date +%D
 
 # and one on crufty packages
 dak cruft-report -R --mode bdo -s staging -s dasyatis > $webdir/cruft-report-daily.txt
-cat $webdir/cruft-report-daily.txt | mail -e -s "Tanglu 3 (Dasyatis) archive cruft report for $(date +%D)" -a "From: Tanglu FTP Masters <ftpmaster@ftp-master.tanglu.org>" mak@debian.org
+cat $webdir/cruft-report-daily.txt | mail -e -s "Tanglu Archive Cruft Report for $(date +%D)" -a "From: Tanglu FTP Masters <ftpmaster@ftp-master.tanglu.org>" mak@debian.org
 
 ################################################################################
 echo "Finally, all is done, compressing logfile"
